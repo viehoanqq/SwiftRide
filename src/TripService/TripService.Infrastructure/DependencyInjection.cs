@@ -3,6 +3,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TripService.Infrastructure.Persistence;
 
+
+using TripService.Application.Interfaces;          // thêm
+using TripService.Infrastructure.Auth;             // thêm
+using TripService.Infrastructure.Repositories; 
+
 namespace TripService.Infrastructure;
 
 public static class DependencyInjection
@@ -11,7 +16,8 @@ public static class DependencyInjection
     {
         services.AddDbContext<TripDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString("TripDb")));
-
+        services.AddScoped<IUserRepository, UserRepository>();     // thêm: dùng DbContext nên Scoped
+        services.AddSingleton<IPasswordHasher, PasswordHasher>();  // thêm: không giữ trạng thái nên Singleton      
         return services;
     }
 
