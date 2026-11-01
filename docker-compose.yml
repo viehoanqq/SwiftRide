@@ -1,0 +1,52 @@
+# Hạ tầng cho SwiftRide: 3 CSDL + RabbitMQ.
+# Cổng phía máy host được đổi (1434, 5433, 27018) để không trùng SQL Server / PostgreSQL / MongoDB cài sẵn trên máy.
+# Các service .NET và frontend sẽ được thêm vào file này ở đợt 7.
+
+name: swiftride
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: swiftride-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "SwiftRide@123"
+    ports:
+      - "1434:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+
+  postgres:
+    image: postgres:16
+    container_name: swiftride-postgres
+    environment:
+      POSTGRES_USER: swiftride
+      POSTGRES_PASSWORD: swiftride
+      POSTGRES_DB: PayDb
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  mongodb:
+    image: mongo:8.0
+    container_name: swiftride-mongodb
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: swiftride-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: swiftride
+      RABBITMQ_DEFAULT_PASS: swiftride
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # giao diện quản lý: http://localhost:15672
+
+volumes:
+  sqlserver-data:
+  postgres-data:
+  mongo-data:
