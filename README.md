@@ -106,24 +106,6 @@ npm run dev        # http://localhost:5173
 
 ---
 
-## Tài khoản demo
-
-Mật khẩu của tất cả tài khoản: **`123456`**. ID tài khoản giống nhau ở cả 3 database.
-
-| Số điện thoại | Họ tên | Vai trò | Số dư ví |
-|---|---|---|---|
-| 0900000001 | Nguyễn Văn An | Rider | 500.000đ |
-| 0900000002 | Trần Thị Bình | Rider | 20.000đ (dùng để demo thanh toán lỗi) |
-| 0910000001 | Lê Văn Cường | Driver | 0đ |
-| 0910000002 | Phạm Minh Dũng | Driver | 0đ |
-| 0910000003 | Hoàng Văn Em | Driver | 0đ |
-| 0910000004 | Võ Thị Phương | Driver | 0đ |
-| 0910000005 | Đặng Quốc Gia | Driver | 0đ |
-
-5 tài xế được đặt sẵn vị trí quanh Quận 1, TP.HCM, trạng thái `Available`.
-
----
-
 ## Kết nối database
 
 Cổng phía máy được đổi khác cổng mặc định để không trùng với SQL Server / PostgreSQL / MongoDB cài sẵn trên máy.
@@ -209,26 +191,53 @@ docker compose up -d
 
 ---
 
-## Tài liệu
+## Làm việc với Git
 
-Nằm ở thư mục `docs/` (cạnh thư mục `SwiftRide/`):
+Mỗi thành viên làm trên **một nhánh riêng** đặt theo tên mình. **Không push thẳng lên `main`**: code vào `main` chỉ qua Pull Request.
 
-| File | Nội dung |
-|---|---|
-| `SwiftRide-DacTaYeuCau.pdf` | Đặc tả: chức năng, use case, user story, sơ đồ luồng |
-| `STRUCTURE.md` | Cấu trúc project chi tiết, pattern nằm ở đâu |
-| `KE-HOACH-THUC-HIEN.md` | Kế hoạch theo đợt: API, màn hình, tiêu chí hoàn thành |
-| `HUONG-DAN-TAO-DATABASE.md` | Hướng dẫn tạo database từ đầu (EF Core migration, MongoDB) |
+### tạo nhánh (làm 1 lần)
+git checkout -b an                 # thay "an" bằng tên của bạn
+git push -u origin an
+```
 
----
+### Mỗi lần làm việc
 
-## Xử lý sự cố
+```powershell
+git checkout an
 
-| Hiện tượng | Nguyên nhân | Cách xử lý |
-|---|---|---|
-| Service báo lỗi kết nối khi khởi động | Container chưa chạy | `docker compose up -d`, chờ khoảng 10 giây rồi chạy lại |
-| Gateway báo `address already in use` | Cổng 5000 bị ứng dụng khác chiếm | Tắt ứng dụng đó, hoặc đổi cổng trong `src/ApiGateway/Properties/launchSettings.json` |
-| Mở SSMS / pgAdmin không thấy bảng | Đang kết nối vào CSDL cài trên máy | Dùng đúng cổng container: 1434 / 5433 / 27018 |
-| `The model ... has pending changes` | Sửa entity nhưng chưa tạo migration | `dotnet ef migrations add ...` |
-| `/health` báo `Unreachable` | Service tương ứng chưa chạy | Chạy service đó |
-| `/health` báo `Unhealthy` | Database của service đó không kết nối được | Kiểm tra container: `docker ps`, `docker start swiftride-...` |
+# 1. Code xong → COMMIT TRƯỚC khi pull
+git add .
+git status                         # không được có bin/, obj/, node_modules/
+git commit -m "feat(trip): API đăng ký, đăng nhập"
+
+# 2. Lấy code mới nhất của main về nhánh mình
+git pull origin main
+#    có xung đột → sửa → git add . → git commit
+
+# 3. Build thử rồi đẩy nhánh lên GitHub
+dotnet build
+git push origin an
+```
+
+### Tạo Pull Request
+
+1. Trên GitHub: **Pull requests → New pull request**, chọn **base: `main` ← compare: `an`**.
+2. Ghi tiêu đề (ví dụ `Đợt 1: API đăng ký, đăng nhập`) và mô tả đã làm gì, test thế nào.
+3. Chọn **Reviewers** là một thành viên khác → **Create pull request**.
+4. Cần sửa theo góp ý: sửa trên nhánh của mình → commit → push, PR tự cập nhật.
+5. Người review thấy ổn thì **Merge pull request**.
+
+### Sau khi PR được merge
+
+```powershell
+git checkout an
+git pull origin main
+git push origin an
+```
+
+
+### Lưu ý riêng cho dự án
+
+- **Migration:** mỗi lúc chỉ một người tạo migration cho một service. Luôn `git pull origin main` trước khi chạy `dotnet ef migrations add`. Không sửa file migration đã có trên `main`.
+- **Không commit** `bin/`, `obj/`, `node_modules/`, `.vs/` (đã có trong `.gitignore`).
+- Pull về có migration mới: chỉ cần chạy lại service là database tự cập nhật.
