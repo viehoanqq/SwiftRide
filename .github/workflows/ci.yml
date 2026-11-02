@@ -19,7 +19,11 @@ jobs:
 
       # Bật DB trước để tranh thủ lúc build (SQL Server khởi động khá lâu)
       - name: Start databases
-        run: docker compose up -d sqlserver postgres mongodb
+        # MongoDB 8.x không chạy được trên kernel Linux 6.19+ của runner GitHub (SERVER-121912)
+        # → riêng CI dùng mongo:7.0; máy local vẫn dùng mongo:8.0 trong docker-compose
+        run: |
+          docker compose up -d sqlserver postgres
+          docker run -d --name swiftride-mongodb -p 27018:27017 mongo:7.0
 
       - name: Restore
         run: dotnet restore SwiftRide.sln
@@ -36,13 +40,14 @@ jobs:
           wait_for() {
             name=$1; shift
             for i in $(seq 1 60); do
-              if "$@" > /dev/null 2>&1; then echo "$name ready"; return 0; fi
+              # timeout 10: mỗi lần kiểm tra tối đa 10s, tránh lệnh bị treo (mongosh tự chờ ~30s khi chưa kết nối được)
+              if timeout 10 "$@" > /dev/null 2>&1; then echo "$name ready"; return 0; fi
               sleep 3
             done
             echo "$name NOT ready after 180s"; return 1
           }
           wait_for SQLServer docker exec swiftride-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'SwiftRide@123' -C -Q "SELECT 1"
-          wait_for Postgres  docker exec swiftride-postgres pg_isready -U swiftride
+          wait_for Postgres  docker exec swiftride-postgres pg_isready -U swiftride -d PayDb
           wait_for MongoDB   docker exec swiftride-mongodb mongosh --quiet --eval "db.runCommand({ping:1})"
 
       - name: Start services
@@ -68,7 +73,8 @@ jobs:
         if: failure()
         run: |
           docker compose ps -a
-          docker compose logs --tail 30 sqlserver postgres mongodb
+          docker compose logs --tail 30 sqlserver postgres
+          docker logs --tail 30 swiftride-mongodb
           tail -n 50 logs/*.log || true
 
   frontend:
