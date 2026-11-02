@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (build + test + health check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Bật DB trước để tranh thủ lúc build (SQL Server khởi động khá lâu)
+      - name: Start databases
+        run: docker compose up -d sqlserver postgres mongodb
+
+      - name: Restore
+        run: dotnet restore SwiftRide.sln
+
+      - name: Build
+        run: dotnet build SwiftRide.sln --no-restore -c Release
+
+      - name: Test
+        run: dotnet test SwiftRide.sln --no-build -c Release
+
+      # Service tự migrate lúc khởi động → phải chờ DB sẵn sàng, không thì service chết ngay
+      - name: Wait for databases
+        run: |
+          for i in $(seq 1 30); do
+            docker exec swiftride-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'SwiftRide@123' -C -Q "SELECT 1" > /dev/null 2>&1 \
+              && docker exec swiftride-postgres pg_isready -U swiftride > /dev/null 2>&1 \
+              && docker exec swiftride-mongodb mongosh --quiet --eval "db.runCommand({ping:1})" > /dev/null 2>&1 \
+              && echo "Databases ready" && exit 0
+            sleep 3
+          done
+          echo "Databases not ready" && exit 1
+
+      - name: Start services
+        run: |
+          mkdir -p logs
+          nohup dotnet run --no-build -c Release --project src/TripService/TripService.Api       > logs/trip.log 2>&1 &
+          nohup dotnet run --no-build -c Release --project src/MatchingService/MatchingService.Api > logs/matching.log 2>&1 &
+          nohup dotnet run --no-build -c Release --project src/PaymentService/PaymentService.Api  > logs/payment.log 2>&1 &
+          nohup dotnet run --no-build -c Release --project src/ApiGateway                         > logs/gateway.log 2>&1 &
+
+      # Gọi GET /health của Gateway (gom /health của 3 service): 200 = cả 3 DB Healthy
+      - name: Health check
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5000/health; then echo; echo "All services healthy"; exit 0; fi
+            sleep 2
+          done
+          echo "Health check failed:"
+          curl -s http://localhost:5000/health || true
+          exit 1
+
+      - name: Service logs
+        if: failure()
+        run: tail -n 50 logs/*.log || true
+
+  frontend:
+    name: Frontend (React build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
