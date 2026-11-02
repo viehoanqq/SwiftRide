@@ -60,4 +60,12 @@ public class AuthAppService(IUserRepository users, IPasswordHasher passwordHashe
         return new LoginResponse(accessToken, expiresIn, new LoginUserDto(user.Id, user.FullName, user.Phone, user.Role.Name));
 
     }
+
+    public async Task<UserDto> GetMeAsync(Guid userId)
+    {
+         var user = await users.GetByIdAsync(userId)
+         ?? throw new NotFoundException("USER_NOT_FOUND", "Không tìm thấy người dùng");
+         return new UserDto(user.Id, user.FullName, user.Phone, user.Role.Name);
+    }
+
 }

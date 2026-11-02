@@ -1,5 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
-
+using Microsoft.AspNetCore.Mvc;  
 namespace ApiGateway.Controllers;
 
 [ApiController]
@@ -39,4 +38,7 @@ public class HealthController(IHttpClientFactory httpClientFactory, IConfigurati
     }
 
     public record ServiceStatus(string Service, string? Database, string Status);
+
+    
+
 }

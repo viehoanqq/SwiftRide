@@ -20,4 +20,7 @@ public class UserRepository(TripDbContext db) : IUserRepository
 
     public Task<User?> GetByPhoneAsync(string phone) =>
          db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Phone == phone);
+    public Task<User?> GetByIdAsync(Guid id) =>
+    db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Id == id);
+
 }

@@ -1,7 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using TripService.Application.DTOs;
 using TripService.Application.Services;
-
+using System.Security.Claims;                 // thêm
+using Microsoft.AspNetCore.Authorization;    
 namespace TripService.Api.Controllers;
 
 [ApiController]
@@ -23,4 +24,13 @@ public class AuthController(AuthAppService auth) : ControllerBase
         var token = await auth.LoginAsync(request);
         return Ok(token);
     }
+
+    [Authorize]                                   // bắt buộc có token hợp lệ, không thì 401
+    [HttpGet("me")]
+    public async Task<IActionResult> Me()
+    {
+        var userId = Guid.Parse(User.FindFirstValue("sub")!);   // lấy Id từ token, KHÔNG nhận từ client
+        return Ok(await auth.GetMeAsync(userId));
+    }
+    
 }
