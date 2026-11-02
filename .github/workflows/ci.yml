@@ -33,14 +33,17 @@ jobs:
       # Service tự migrate lúc khởi động → phải chờ DB sẵn sàng, không thì service chết ngay
       - name: Wait for databases
         run: |
-          for i in $(seq 1 30); do
-            docker exec swiftride-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'SwiftRide@123' -C -Q "SELECT 1" > /dev/null 2>&1 \
-              && docker exec swiftride-postgres pg_isready -U swiftride > /dev/null 2>&1 \
-              && docker exec swiftride-mongodb mongosh --quiet --eval "db.runCommand({ping:1})" > /dev/null 2>&1 \
-              && echo "Databases ready" && exit 0
-            sleep 3
-          done
-          echo "Databases not ready" && exit 1
+          wait_for() {
+            name=$1; shift
+            for i in $(seq 1 60); do
+              if "$@" > /dev/null 2>&1; then echo "$name ready"; return 0; fi
+              sleep 3
+            done
+            echo "$name NOT ready after 180s"; return 1
+          }
+          wait_for SQLServer docker exec swiftride-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'SwiftRide@123' -C -Q "SELECT 1"
+          wait_for Postgres  docker exec swiftride-postgres pg_isready -U swiftride
+          wait_for MongoDB   docker exec swiftride-mongodb mongosh --quiet --eval "db.runCommand({ping:1})"
 
       - name: Start services
         run: |
@@ -63,7 +66,10 @@ jobs:
 
       - name: Service logs
         if: failure()
-        run: tail -n 50 logs/*.log || true
+        run: |
+          docker compose ps -a
+          docker compose logs --tail 30 sqlserver postgres mongodb
+          tail -n 50 logs/*.log || true
 
   frontend:
     name: Frontend (React build)
