@@ -8,6 +8,8 @@ namespace TripService.Infrastructure.Repositories;
 public class UserRepository(TripDbContext db) : IUserRepository
 {
     public Task<bool> PhoneExistsAsync(string phone) =>
+    
+        
         db.Users.AnyAsync(u => u.Phone == phone);
 
     public async Task AddAsync(User user)
@@ -15,4 +17,7 @@ public class UserRepository(TripDbContext db) : IUserRepository
         db.Users.Add(user);
         await db.SaveChangesAsync();          // chỉ tầng Infrastructure mới gọi SaveChanges
     }
+
+    public Task<User?> GetByPhoneAsync(string phone) =>
+         db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Phone == phone);
 }

@@ -6,7 +6,7 @@ using TripService.Domain.Entities;
 
 namespace TripService.Application.Services;
 
-public class AuthAppService(IUserRepository users, IPasswordHasher passwordHasher)
+public class AuthAppService(IUserRepository users, IPasswordHasher passwordHasher, ITokenService tokenService) 
 {
     public async Task<UserDto> RegisterAsync(RegisterRequest request)
     {
@@ -47,5 +47,17 @@ public class AuthAppService(IUserRepository users, IPasswordHasher passwordHashe
 
         // 4. Trả về, KHÔNG trả mật khẩu
         return new UserDto(user.Id, user.FullName, user.Phone, roleName);
+    }
+
+    public async Task<LoginResponse> LoginAsync(LoginRequest request)
+    {
+        var user = await users.GetByPhoneAsync(request.Phone.Trim());
+        if (user is null || !passwordHasher.Verify(request.Password, user.PasswordHash))
+            throw new UnauthorizedException("INVALID_CREDENTIALS", "Số điện thoại hoặc mật khẩu không đúng");
+        if (!user.IsActive)
+            throw new ForbiddenException("ACCOUNT_LOCKED", "Tài khoản đã bị khóa");
+        var (accessToken, expiresIn) = tokenService.CreateToken(user);
+        return new LoginResponse(accessToken, expiresIn, new LoginUserDto(user.Id, user.FullName, user.Phone, user.Role.Name));
+
     }
 }
