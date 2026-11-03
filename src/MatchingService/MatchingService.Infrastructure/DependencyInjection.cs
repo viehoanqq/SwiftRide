@@ -1,4 +1,6 @@
+using MatchingService.Application.Interfaces;
 using MatchingService.Infrastructure.Mongo;
+using MatchingService.Infrastructure.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -9,6 +11,7 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddSingleton(new MongoContext(configuration.GetConnectionString("MatchDb")!));
+        services.AddScoped<IDriverRepository, DriverRepository>();
 
         return services;
     }

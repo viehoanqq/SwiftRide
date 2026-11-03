@@ -7,6 +7,8 @@ using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddScoped<MatchingService.Application.Services.MatchAppService>();
+builder.Services.AddScoped<MatchingService.Application.Services.DriverAppService>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
