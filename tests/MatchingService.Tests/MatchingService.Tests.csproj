@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\MatchingService\MatchingService.Domain\MatchingService.Domain.csproj" />
     <ProjectReference Include="..\..\src\MatchingService\MatchingService.Application\MatchingService.Application.csproj" />
+    <ProjectReference Include="..\..\src\MatchingService\MatchingService.Api\MatchingService.Api.csproj" />
   </ItemGroup>
 
 </Project>
