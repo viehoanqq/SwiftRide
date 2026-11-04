@@ -1,4 +1,5 @@
 ﻿using MatchingService.Api.Controllers;
+using MatchingService.Application.DTOs;
 using MatchingService.Application.Interfaces;
 using MatchingService.Domain.Entities;
 using MatchingService.Domain.Enums;
@@ -42,8 +43,7 @@ public class DriverAvailabilityControllerTests
 
         var result = await controller.GetMyAvailability();
 
-        var ok = Assert.IsType<OkObjectResult>(result);
-        var payload = Assert.IsType<Driver>(ok.Value);
-        Assert.Equal(DriverStatus.Available, payload.Status);
+        var payload = Assert.IsType<DriverDto>(result.Value);
+        Assert.Equal("Available", payload.Status);
     }
 }
