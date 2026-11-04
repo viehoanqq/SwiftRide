@@ -11,4 +11,7 @@ public class TripFare
     public FareStatus Status { get; set; }
     public DateTime QuotedAt { get; set; }
     public DateTime? RespondedAt { get; set; }
+    public double DistanceKm { get; set; }
+    public double DurationMin { get; set; }
+    public string Strategy { get; set; } = null!;
 }

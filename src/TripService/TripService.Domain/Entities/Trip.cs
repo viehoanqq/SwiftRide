@@ -17,4 +17,10 @@ public class Trip
     public TripFare? Fare { get; set; }
     public List<TripDriverOffer> Offers { get; set; } = [];
     public List<TripStatusHistory> History { get; set; } = [];
+    // ===== Chữ ký đã chốt. Phong điền phần thân (State pattern) =====
+    public static Trip Create(Guid riderId, TripLocation location) => throw new NotImplementedException();
+    public void MarkQuoted(TripFare fare)     => throw new NotImplementedException();
+    public void MarkFailed()                  => throw new NotImplementedException();
+    public void Confirm(PaymentMethod method) => throw new NotImplementedException();
+    public void Cancel()                      => throw new NotImplementedException();
 }

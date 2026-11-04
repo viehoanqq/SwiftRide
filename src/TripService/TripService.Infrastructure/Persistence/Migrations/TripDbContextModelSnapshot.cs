@@ -128,6 +128,12 @@ namespace TripService.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("TripId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<double>("DistanceKm")
+                        .HasColumnType("float");
+
+                    b.Property<double>("DurationMin")
+                        .HasColumnType("float");
+
                     b.Property<string>("PaymentMethod")
                         .HasMaxLength(10)
                         .IsUnicode(false)
@@ -154,6 +160,12 @@ namespace TripService.Infrastructure.Persistence.Migrations
                         .HasMaxLength(10)
                         .IsUnicode(false)
                         .HasColumnType("varchar(10)");
+
+                    b.Property<string>("Strategy")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
 
                     b.HasKey("TripId");
 
