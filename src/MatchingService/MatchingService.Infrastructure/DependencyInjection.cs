@@ -1,5 +1,6 @@
 using MatchingService.Application.Interfaces;
 using MatchingService.Infrastructure.Mongo;
+using MatchingService.Infrastructure.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
