@@ -1,10 +1,12 @@
 using MatchingService.Application.DTOs;
 using MatchingService.Application.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MatchingService.Api.Controllers;
 
 [ApiController]
+[Authorize ]
 [Route("drivers")]
 public class DriversController(DriverAppService driverAppService) : ControllerBase
 {
