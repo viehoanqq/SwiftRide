@@ -19,7 +19,7 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, UserRepository>();     // thêm: dùng DbContext nên Scoped
         services.AddSingleton<IPasswordHasher, PasswordHasher>();  // thêm: không giữ trạng thái nên Singleton   
         services.AddSingleton<ITokenService, JwtTokenService>();
-
+        services.AddScoped<ITripRepository, TripRepository>();     // thêm: dùng DbContext nên Scoped
         return services;
     }
 
