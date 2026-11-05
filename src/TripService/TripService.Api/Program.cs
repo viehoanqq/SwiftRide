@@ -1,12 +1,13 @@
 using TripService.Infrastructure;
-using TripService.Api.Middleware;              // thêm
-using TripService.Application.Services;  
+using TripService.Api.Controllers;
+using TripService.Api.Middleware;
+using TripService.Application.Services;
 
-using System.Text;                                       // thêm
-using Microsoft.AspNetCore.Authentication.JwtBearer;     // thêm
-using Microsoft.IdentityModel.Tokens;                    // thêm
-using Microsoft.OpenApi; 
-
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
+using Swashbuckle.AspNetCore.Filters;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,9 +18,6 @@ builder.Services.AddScoped<AuthAppService>();          // ← thêm
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
-
-
-// ← SỬA: thêm nút "Authorize" vào Swagger để dán token khi test
 builder.Services.AddSwaggerGen(options =>
 {
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -33,7 +31,10 @@ builder.Services.AddSwaggerGen(options =>
     {
         [new OpenApiSecuritySchemeReference("Bearer", document)] = []
     });
+    options.ExampleFilters();
 });
+
+builder.Services.AddSwaggerExamplesFromAssemblyOf<TripsController>();
 
 
 var jwt = builder.Configuration.GetSection("Jwt");
