@@ -1,30 +1,48 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import client, { getErrorMessage } from "../../api/client";
+
+// Danh sách điểm đón
+const pickupLocations = [
+    {
+        lat: 10.772,
+        lng: 106.699,
+        address: "123 Lê Lợi, Q1"
+    }
+];
+
+// Danh sách điểm đến
+const destinationLocations = [
+    {
+        lat: 10.801,
+        lng: 106.75,
+        address: "456 Trần Hưng Đạo, Q5"
+    }
+];
 
 export default function BookPage() {
     const navigate = useNavigate();
 
     const [pickupLocation, setPickupLocation] = useState("");
     const [destination, setDestination] = useState("");
-    const [note, setNote] = useState("");
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
     async function handleSubmit(e) {
         e.preventDefault();
-
         setError("");
 
-        // Kiểm tra dữ liệu đầu vào
-        if (!pickupLocation.trim() || !destination.trim()) {
-            setError("Vui lòng nhập đầy đủ điểm đón và điểm đến.");
+        if (!pickupLocation || !destination) {
+            setError("Vui lòng chọn đầy đủ điểm đón và điểm đến.");
             return;
         }
 
-        if (pickupLocation.trim().toLowerCase() === destination.trim().toLowerCase()) {
+        // Chuyển dữ liệu JSON từ select thành object
+        const pickup = JSON.parse(pickupLocation);
+        const dropoff = JSON.parse(destination);
+
+        if (pickup.lat === dropoff.lat && pickup.lng === dropoff.lng) {
             setError("Điểm đón và điểm đến không được giống nhau.");
             return;
         }
@@ -32,17 +50,14 @@ export default function BookPage() {
         try {
             setLoading(true);
 
-            // Gửi yêu cầu đặt chuyến đến backend
+            // Gửi đúng cấu trúc CreateTripRequest của backend
             const response = await client.post("/trips", {
-                pickupLocation: pickupLocation.trim(),
-                destination: destination.trim(),
-                note: note.trim()
+                pickup,
+                dropoff
             });
 
             const trip = response.data;
-
-            // Chuyển đến trang chi tiết chuyến đi
-            const tripId = trip.id ?? trip.tripId;
+            const tripId = trip.tripId;
 
             if (!tripId) {
                 throw new Error("Không tìm thấy mã chuyến đi trong phản hồi.");
@@ -52,9 +67,9 @@ export default function BookPage() {
 
         } catch (err) {
             setError(
-                getErrorMessage
+                err.response
                     ? getErrorMessage(err)
-                    : err.response?.data?.message || "Không thể đặt chuyến. Vui lòng thử lại."
+                    : err.message || "Không thể đặt chuyến. Vui lòng thử lại."
             );
         } finally {
             setLoading(false);
@@ -72,14 +87,23 @@ export default function BookPage() {
                         Điểm đón
                     </label>
 
-                    <input
+                    <select
                         id="pickupLocation"
-                        type="text"
-                        placeholder="Nhập địa điểm đón"
                         value={pickupLocation}
                         onChange={(e) => setPickupLocation(e.target.value)}
                         disabled={loading}
-                    />
+                    >
+                        <option value="">Chọn điểm đón</option>
+
+                        {pickupLocations.map((location, index) => (
+                            <option
+                                key={index}
+                                value={JSON.stringify(location)}
+                            >
+                                {location.address}
+                            </option>
+                        ))}
+                    </select>
                 </div>
 
                 <div>
@@ -87,14 +111,23 @@ export default function BookPage() {
                         Điểm đến
                     </label>
 
-                    <input
+                    <select
                         id="destination"
-                        type="text"
-                        placeholder="Nhập địa điểm đến"
                         value={destination}
                         onChange={(e) => setDestination(e.target.value)}
                         disabled={loading}
-                    />
+                    >
+                        <option value="">Chọn điểm đến</option>
+
+                        {destinationLocations.map((location, index) => (
+                            <option
+                                key={index}
+                                value={JSON.stringify(location)}
+                            >
+                                {location.address}
+                            </option>
+                        ))}
+                    </select>
                 </div>
 
                 {error && (

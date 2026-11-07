@@ -6,7 +6,6 @@ export default function TripQuote({ trip, onConfirm, onReject }) {
 
     function handleSubmit(e) {
         e.preventDefault();
-
         if (onConfirm) {
             onConfirm(paymentMethod);
         }
@@ -17,8 +16,8 @@ export default function TripQuote({ trip, onConfirm, onReject }) {
             <h2>Báo giá chuyến đi</h2>
 
             <p>Mã chuyến: {trip.id}</p>
-            <p>Điểm đón: {trip.pickupLocation}</p>
-            <p>Điểm đến: {trip.destination}</p>
+            <p>Điểm đón: {trip.pickup.address}</p>
+            <p>Điểm đến: {trip.dropoff.address}</p>
             <p>Giá: {trip.price}</p>
             <p>Quãng đường: {trip.distance}</p>
             <p>Thời gian dự kiến: {trip.estimatedDuration}</p>

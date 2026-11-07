@@ -26,8 +26,8 @@ export default function TripTimeline({ trip }) {
 
             <h3>Thông tin chuyến đi</h3>
 
-            <p>Điểm đón: {trip.pickupLocation}</p>
-            <p>Điểm đến: {trip.destination}</p>
+            <p>Điểm đón: {trip.pickup.address}</p>
+            <p>Điểm đến: {trip.dropoff.address}</p>
             <p>Giá: {trip.price}</p>
 
             <h3>Lịch sử chuyến đi</h3>
