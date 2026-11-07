@@ -1,26 +1,67 @@
 using TripService.Domain.Enums;
+using TripService.Domain.States;
 
 namespace TripService.Domain.Entities;
 
 // Aggregate root: các bảng con (Location, Fare, Offers, History) luôn được load và lưu cùng Trip.
-// Hành vi chuyển trạng thái (State pattern) sẽ được thêm ở đợt 3.
 public class Trip
 {
-    public Guid Id { get; set; }
+    public Guid Id { get; set; } = Guid.NewGuid();
     public Guid RiderId { get; set; }
     public TripStatus Status { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public byte[] RowVersion { get; set; } = null!;
 
     public TripLocation Location { get; set; } = null!;
     public TripFare? Fare { get; set; }
     public List<TripDriverOffer> Offers { get; set; } = [];
     public List<TripStatusHistory> History { get; set; } = [];
-    // ===== Chữ ký đã chốt. Phong điền phần thân (State pattern) =====
-    public static Trip Create(Guid riderId, TripLocation location) => throw new NotImplementedException();
-    public void MarkQuoted(TripFare fare)     => throw new NotImplementedException();
-    public void MarkFailed()                  => throw new NotImplementedException();
-    public void Confirm(PaymentMethod method) => throw new NotImplementedException();
-    public void Cancel()                      => throw new NotImplementedException();
+
+    public static Trip CreateRequested(Guid riderId, TripLocation location)
+    {
+        var trip = new Trip
+        {
+            Id = Guid.NewGuid(),
+            RiderId = riderId,
+            Status = TripStatus.Requested,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            Location = location,
+            History = []
+        };
+
+        trip.Location.TripId = trip.Id;
+        trip.RecordStatusHistory(null, TripStatus.Requested);
+        return trip;
+    }
+
+    public void TransitionTo(TripStatus targetStatus)
+    {
+        if (Status == targetStatus)
+        {
+            return;
+        }
+
+        var previousStatus = Status;
+        TripStateFactory.Create(this).TransitionTo(targetStatus);
+        RecordStatusHistory(previousStatus, targetStatus);
+    }
+
+    public bool CanAccess(Guid userId, Guid? assignedDriverId = null)
+    {
+        return userId == RiderId || (assignedDriverId.HasValue && userId == assignedDriverId.Value);
+    }
+
+    public void RecordStatusHistory(TripStatus? fromStatus, TripStatus toStatus)
+    {
+        History ??= [];
+        History.Add(new TripStatusHistory
+        {
+            TripId = Id,
+            FromStatus = fromStatus,
+            ToStatus = toStatus,
+            CreatedAt = DateTime.UtcNow
+        });
+    }
 }
