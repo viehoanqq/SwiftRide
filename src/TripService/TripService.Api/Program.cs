@@ -12,7 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<AuthAppService>();          // ← thêm
-//builder.Services.AddScoped<TripService.Application.Services.TripAppService>();
+builder.Services.AddScoped<TripAppService>();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();

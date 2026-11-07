@@ -1,4 +1,5 @@
 using TripService.Domain.Enums;
+using TripService.Domain.Exceptions;
 
 namespace TripService.Domain.Entities;
 
@@ -21,6 +22,49 @@ public class Trip
     public static Trip Create(Guid riderId, TripLocation location) => throw new NotImplementedException();
     public void MarkQuoted(TripFare fare)     => throw new NotImplementedException();
     public void MarkFailed()                  => throw new NotImplementedException();
-    public void Confirm(PaymentMethod method) => throw new NotImplementedException();
-    public void Cancel()                      => throw new NotImplementedException();
+
+    public void Confirm(PaymentMethod method)
+    {
+        if (Status != TripStatus.Quoted)
+        {
+            throw new InvalidTripStateException($"Chuyến đi ở trạng thái {Status}, không thể xác nhận.");
+        }
+
+        if (Fare is null)
+        {
+            throw new InvalidTripStateException("Chuyến đi chưa có thông tin báo giá (Fare).");
+        }
+
+        Fare.PaymentMethod = method;
+        Fare.Status = FareStatus.Accepted;
+        Fare.RespondedAt = DateTime.UtcNow;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void Cancel()
+    {
+        if (Status != TripStatus.Quoted)
+        {
+            throw new InvalidTripStateException($"Chuyến đi ở trạng thái {Status}, không thể hủy.");
+        }
+
+        var oldStatus = Status;
+        Status = TripStatus.Cancelled;
+        UpdatedAt = DateTime.UtcNow;
+
+        if (Fare is not null)
+        {
+            Fare.Status = FareStatus.Rejected;
+            Fare.RespondedAt = DateTime.UtcNow;
+        }
+
+        History ??= [];
+        History.Add(new TripStatusHistory
+        {
+            TripId = Id,
+            FromStatus = oldStatus,
+            ToStatus = TripStatus.Cancelled,
+            CreatedAt = DateTime.UtcNow
+        });
+    }
 }
