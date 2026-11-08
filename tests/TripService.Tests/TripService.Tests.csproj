@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\TripService\TripService.Domain\TripService.Domain.csproj" />
     <ProjectReference Include="..\..\src\TripService\TripService.Application\TripService.Application.csproj" />
+    <ProjectReference Include="..\..\src\TripService\TripService.Infrastructure\TripService.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
