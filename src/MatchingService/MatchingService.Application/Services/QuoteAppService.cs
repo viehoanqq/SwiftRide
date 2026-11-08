@@ -17,6 +17,7 @@ public class QuoteAppService(
 
     public async Task<QuoteResponse> CreateAsync(QuoteRequest request)
     {
+        
         if (request.TripId == Guid.Empty)
             throw new ValidationException("TripId không hợp lệ");
 
