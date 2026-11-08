@@ -106,13 +106,15 @@ public class TripConfirmTests
         Assert.NotNull(trip.Fare.RespondedAt);
         var offer = Assert.Single(trip.Offers);
         Assert.Equal(1, offer.AttemptNo);
+        Assert.Equal(1.2, offer.DistanceToPickupKm);
         Assert.Equal(OfferStatus.Pending, offer.Status);
         Assert.Equal(TripStatus.Quoted, trip.History[^1].FromStatus);
         Assert.Equal(TripStatus.DriverOffered, trip.History[^1].ToStatus);
         _mockTripRepo.Verify(repository => repository.AddOffer(It.Is<TripDriverOffer>(addedOffer =>
             addedOffer.Id == offer.Id &&
             addedOffer.TripId == tripId &&
-            addedOffer.DriverId == offer.DriverId)), Times.Once);
+            addedOffer.DriverId == offer.DriverId &&
+            addedOffer.DistanceToPickupKm == 1.2)), Times.Once);
         _mockMatchingClient.Verify(client => client.MatchAsync(It.Is<MatchDriverRequest>(match =>
             match.PickupLat == 10.7725 &&
             match.PickupLng == 10.6980)), Times.Once);

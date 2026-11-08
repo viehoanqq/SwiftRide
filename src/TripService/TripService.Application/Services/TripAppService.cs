@@ -132,9 +132,17 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching) : I
                 throw new InvalidDataException(
                     "Matching service returned a DriverId that is not a valid TripDB user GUID.");
             }
+            else if (!double.IsFinite(matchedDriver.DistanceKm) || matchedDriver.DistanceKm < 0)
+            {
+                throw new InvalidDataException(
+                    "Matching service returned an invalid distance to pickup.");
+            }
             else
             {
-                var offer = trip.OfferDriver(driverId, trip.Offers.Count + 1);
+                var offer = trip.OfferDriver(
+                    driverId,
+                    trip.Offers.Count + 1,
+                    matchedDriver.DistanceKm);
                 trips.AddOffer(offer);
             }
         }

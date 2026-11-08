@@ -78,6 +78,7 @@ public class TripDriverOfferConfiguration : IEntityTypeConfiguration<TripDriverO
     {
         builder.ToTable("TripDriverOffers");
         builder.HasKey(o => o.Id);
+        builder.Property(o => o.DistanceToPickupKm).IsRequired();
         builder.Property(o => o.Status).HasConversion<string>().HasMaxLength(10).IsUnicode(false);
         builder.HasIndex(o => new { o.TripId, o.AttemptNo }).IsUnique();
         builder.HasIndex(o => new { o.DriverId, o.Status });

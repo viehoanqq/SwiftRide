@@ -36,7 +36,7 @@ public abstract class TripState
     public virtual void Confirm(Trip trip, PaymentMethod method)
         => throw InvalidTransition(nameof(Confirm));
 
-    public virtual void OfferDriver(Trip trip, Guid driverId, int attemptNo)
+    public virtual void OfferDriver(Trip trip, Guid driverId, int attemptNo, double distanceToPickupKm)
         => throw InvalidTransition(nameof(OfferDriver));
 
     public virtual void AcceptOffer(Trip trip, Guid driverId)

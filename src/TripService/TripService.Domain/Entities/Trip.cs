@@ -62,9 +62,12 @@ public class Trip
     public void Confirm(PaymentMethod method)
         => CurrentState.Confirm(this, method);
 
-    public TripDriverOffer OfferDriver(Guid driverId, int attemptNo)
+    public TripDriverOffer OfferDriver(
+        Guid driverId,
+        int attemptNo,
+        double distanceToPickupKm = 0)
     {
-        CurrentState.OfferDriver(this, driverId, attemptNo);
+        CurrentState.OfferDriver(this, driverId, attemptNo, distanceToPickupKm);
         return Offers[^1];
     }
 
@@ -124,11 +127,17 @@ public class Trip
         Fare.RespondedAt = DateTime.UtcNow;
     }
 
-    internal void AddDriverOffer(Guid driverId, int attemptNo)
+    internal void AddDriverOffer(Guid driverId, int attemptNo, double distanceToPickupKm)
     {
         if (driverId == Guid.Empty)
         {
             throw new InvalidTripStateException("INVALID_TRIP_STATE: DriverId không hợp lệ.");
+        }
+
+        if (!double.IsFinite(distanceToPickupKm) || distanceToPickupKm < 0)
+        {
+            throw new InvalidTripStateException(
+                "INVALID_TRIP_STATE: DistanceToPickupKm phải là số hữu hạn không âm.");
         }
 
         if (attemptNo != Offers.Count + 1)
@@ -155,6 +164,7 @@ public class Trip
             TripId = Id,
             DriverId = driverId,
             AttemptNo = attemptNo,
+            DistanceToPickupKm = distanceToPickupKm,
             Status = OfferStatus.Pending,
             CreatedAt = DateTime.UtcNow
         });

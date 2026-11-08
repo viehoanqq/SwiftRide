@@ -98,6 +98,9 @@ namespace TripService.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<double>("DistanceToPickupKm")
+                        .HasColumnType("float");
+
                     b.Property<Guid>("DriverId")
                         .HasColumnType("uniqueidentifier");
 
@@ -397,7 +400,7 @@ namespace TripService.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("TripService.Domain.Entities.TripDriverOffer", b =>
                 {
-                    b.HasOne("TripService.Domain.Entities.User", null)
+                    b.HasOne("TripService.Domain.Entities.User", "Driver")
                         .WithMany()
                         .HasForeignKey("DriverId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -408,6 +411,8 @@ namespace TripService.Infrastructure.Persistence.Migrations
                         .HasForeignKey("TripId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Driver");
                 });
 
             modelBuilder.Entity("TripService.Domain.Entities.TripFare", b =>

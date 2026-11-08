@@ -7,14 +7,18 @@ public class DriverOfferedState : TripState
 {
     public override TripStatus Status => TripStatus.DriverOffered;
 
-    public override void OfferDriver(Trip trip, Guid driverId, int attemptNo)
+    public override void OfferDriver(
+        Trip trip,
+        Guid driverId,
+        int attemptNo,
+        double distanceToPickupKm)
     {
         if (trip.Offers.Any(offer => offer.Status == OfferStatus.Pending))
         {
             throw InvalidTransition(nameof(OfferDriver));
         }
 
-        trip.AddDriverOffer(driverId, attemptNo);
+        trip.AddDriverOffer(driverId, attemptNo, distanceToPickupKm);
     }
 
     public override void MarkFailed(Trip trip)
