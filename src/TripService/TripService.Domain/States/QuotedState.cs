@@ -10,7 +10,16 @@ public class QuotedState : TripState
     public override void Confirm(Trip trip, PaymentMethod method)
     {
         trip.ConfirmFare(method);
-        trip.TransitionTo(TripStatus.DriverOffered);
+    }
+
+    public override void OfferDriver(Trip trip, Guid driverId, int attemptNo)
+    {
+        if (trip.Fare is not { Status: FareStatus.Accepted, PaymentMethod: not null })
+        {
+            throw InvalidTransition(nameof(OfferDriver));
+        }
+
+        trip.AddDriverOffer(driverId, attemptNo);
     }
 
     public override void MarkFailed(Trip trip)

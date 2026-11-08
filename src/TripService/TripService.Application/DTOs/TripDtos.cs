@@ -16,6 +16,19 @@ public record CreateTripResponse(
 public record ConfirmTripRequest(bool Accept, string? PaymentMethod);   // "WALLET" | "CARD", bắt buộc khi Accept = true
 public record ConfirmTripResponse(string Status);
 
+/// <summary>Thông tin một lời mời chuyến hiển thị cho tài xế.</summary>
+public sealed record DriverOfferDto(
+    Guid OfferId,
+    Guid TripId,
+    LocationDto Pickup,
+    LocationDto Dropoff,
+    decimal Price,
+    double DistanceToPickupKm,
+    DateTimeOffset CreatedAt);
+
+/// <summary>Trạng thái chuyến sau một thao tác của tài xế.</summary>
+public sealed record TripDriverActionResponse(string Status);
+
 // ----- GET /trips/{id} và GET /trips/me/current
 public record TripDetailDto(
     Guid Id, string Status,
@@ -30,6 +43,17 @@ public record TripHistoryDto(string? From, string To, DateTime At);
 // ----- Hợp đồng với Matching (/quote): phải khớp với Minh
 public record GeoPointDto(double Lat, double Lng);
 public record QuoteResult(string QuoteId, double DistanceKm, double DurationMin, string Strategy, decimal Price);
+public record MatchDriverRequest(
+    double PickupLat,
+    double PickupLng,
+    double? RadiusKm = null,
+    List<string>? ExcludeDriverIds = null);
+public record MatchDriverResult(
+    string DriverId,
+    string Name,
+    string Status,
+    double DistanceKm,
+    GeoPointDto Location);
 
 public static class TripDtoMappings
 {

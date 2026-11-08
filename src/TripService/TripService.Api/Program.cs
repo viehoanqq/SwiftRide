@@ -1,6 +1,8 @@
 using TripService.Infrastructure;
 using TripService.Api.Middleware;              // thêm
 using TripService.Application.Services;  
+using TripService.Application.Interfaces;
+using TripService.Application.Options;
 
 using System.Text;                                       // thêm
 using Microsoft.AspNetCore.Authentication.JwtBearer;     // thêm
@@ -13,6 +15,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<AuthAppService>();          // ← thêm
 builder.Services.AddScoped<TripAppService>();
+builder.Services.AddScoped<ITripDriverWorkflow>(serviceProvider =>
+    serviceProvider.GetRequiredService<TripAppService>());
+builder.Services.Configure<TripWorkflowOptions>(
+    builder.Configuration.GetSection(TripWorkflowOptions.SectionName));
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();

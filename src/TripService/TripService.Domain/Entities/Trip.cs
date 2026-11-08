@@ -62,6 +62,27 @@ public class Trip
     public void Confirm(PaymentMethod method)
         => CurrentState.Confirm(this, method);
 
+    public TripDriverOffer OfferDriver(Guid driverId, int attemptNo)
+    {
+        CurrentState.OfferDriver(this, driverId, attemptNo);
+        return Offers[^1];
+    }
+
+    public void AcceptOffer(Guid driverId)
+        => CurrentState.AcceptOffer(this, driverId);
+
+    public void RejectOffer(Guid driverId)
+        => CurrentState.RejectOffer(this, driverId);
+
+    public void MarkEnRoute()
+        => CurrentState.MarkEnRoute(this);
+
+    public void MarkPickedUp()
+        => CurrentState.MarkPickedUp(this);
+
+    public void MarkDroppedOff()
+        => CurrentState.MarkDroppedOff(this);
+
     public void Cancel()
         => CurrentState.Cancel(this);
 
@@ -101,6 +122,47 @@ public class Trip
         Fare.PaymentMethod = method;
         Fare.Status = FareStatus.Accepted;
         Fare.RespondedAt = DateTime.UtcNow;
+    }
+
+    internal void AddDriverOffer(Guid driverId, int attemptNo)
+    {
+        if (driverId == Guid.Empty)
+        {
+            throw new InvalidTripStateException("INVALID_TRIP_STATE: DriverId không hợp lệ.");
+        }
+
+        if (attemptNo != Offers.Count + 1)
+        {
+            throw new InvalidTripStateException(
+                $"INVALID_TRIP_STATE: AttemptNo phải bằng {Offers.Count + 1}.");
+        }
+
+        if (Offers.Any(offer => offer.DriverId == driverId))
+        {
+            throw new InvalidTripStateException(
+                "INVALID_TRIP_STATE: Tài xế này đã có offer trong chuyến đi.");
+        }
+
+        if (Offers.Any(offer => offer.Status == OfferStatus.Pending))
+        {
+            throw new InvalidTripStateException(
+                "INVALID_TRIP_STATE: Chuyến đi đã có offer đang chờ phản hồi.");
+        }
+
+        Offers.Add(new TripDriverOffer
+        {
+            Id = Guid.NewGuid(),
+            TripId = Id,
+            DriverId = driverId,
+            AttemptNo = attemptNo,
+            Status = OfferStatus.Pending,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        if (Status != TripStatus.DriverOffered)
+        {
+            TransitionTo(TripStatus.DriverOffered);
+        }
     }
 
     internal void RejectFare()

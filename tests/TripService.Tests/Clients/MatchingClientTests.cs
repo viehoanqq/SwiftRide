@@ -249,4 +249,64 @@ public class MatchingClientTests
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             client.GetQuoteAsync(Guid.NewGuid(), new GeoPointDto(10, 10), new GeoPointDto(11, 11)));
     }
+
+    [Fact]
+    public async Task MatchAsync_ShouldPostRequestAndReturnDriver_WhenMatchingFindsOne()
+    {
+        var driverId = Guid.NewGuid();
+        var expectedDriver = new MatchDriverResult(
+            driverId.ToString(),
+            "Driver One",
+            "Available",
+            1.25,
+            new GeoPointDto(10.77, 106.69));
+        HttpRequestMessage? capturedRequest = null;
+        var handlerMock = new Mock<HttpMessageHandler>();
+        handlerMock.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .Callback<HttpRequestMessage, CancellationToken>((request, _) => capturedRequest = request)
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.OK,
+                Content = JsonContent.Create(expectedDriver)
+            });
+
+        var httpClient = new HttpClient(handlerMock.Object)
+        {
+            BaseAddress = new Uri("http://localhost:5002")
+        };
+        var client = new MatchingClient(httpClient, _mockHttpContextAccessor.Object);
+
+        var result = await client.MatchAsync(new MatchDriverRequest(10.77, 106.69));
+
+        Assert.NotNull(result);
+        Assert.Equal(driverId.ToString(), result.DriverId);
+        Assert.Equal("Driver One", result.Name);
+        Assert.Equal("/match", capturedRequest!.RequestUri!.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task MatchAsync_ShouldReturnNull_WhenMatchingReturnsNotFound()
+    {
+        var handlerMock = new Mock<HttpMessageHandler>();
+        handlerMock.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.NotFound));
+
+        var httpClient = new HttpClient(handlerMock.Object)
+        {
+            BaseAddress = new Uri("http://localhost:5002")
+        };
+        var client = new MatchingClient(httpClient, _mockHttpContextAccessor.Object);
+
+        var result = await client.MatchAsync(new MatchDriverRequest(10.77, 106.69));
+
+        Assert.Null(result);
+    }
 }

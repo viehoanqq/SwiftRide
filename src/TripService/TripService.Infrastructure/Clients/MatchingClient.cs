@@ -13,15 +13,14 @@ public class MatchingClient(HttpClient httpClient, IHttpContextAccessor httpCont
     private static readonly TimeSpan TotalTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan AttemptTimeout = TimeSpan.FromSeconds(1);
 
-    public async Task<QuoteResult?> GetQuoteAsync(Guid tripId, GeoPointDto pickup, GeoPointDto dropoff)
-    {
-        var payload = new
-        {
-            tripId,
-            pickup,
-            dropoff
-        };
+    public Task<QuoteResult?> GetQuoteAsync(Guid tripId, GeoPointDto pickup, GeoPointDto dropoff) =>
+        PostJsonAsync<QuoteResult>("/quote", new { tripId, pickup, dropoff });
 
+    public Task<MatchDriverResult?> MatchAsync(MatchDriverRequest request) =>
+        PostJsonAsync<MatchDriverResult>("/match", request);
+
+    private async Task<TResponse?> PostJsonAsync<TResponse>(string path, object payload)
+    {
         const int maxAttempts = 3;
         using var totalTimeout = new CancellationTokenSource(TotalTimeout);
 
@@ -29,8 +28,7 @@ public class MatchingClient(HttpClient httpClient, IHttpContextAccessor httpCont
         {
             using var attemptTimeout = CancellationTokenSource.CreateLinkedTokenSource(totalTimeout.Token);
             attemptTimeout.CancelAfter(AttemptTimeout);
-
-            using var request = CreateQuoteRequest(payload);
+            using var request = CreateRequest(path, payload);
 
             HttpResponseMessage response;
             try
@@ -42,12 +40,12 @@ public class MatchingClient(HttpClient httpClient, IHttpContextAccessor httpCont
             }
             catch (HttpRequestException) when (attempt < maxAttempts && !totalTimeout.IsCancellationRequested)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), totalTimeout.Token);
+                await DelayBeforeRetryAsync(attempt, totalTimeout.Token);
                 continue;
             }
             catch (OperationCanceledException) when (attempt < maxAttempts && !totalTimeout.IsCancellationRequested)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), totalTimeout.Token);
+                await DelayBeforeRetryAsync(attempt, totalTimeout.Token);
                 continue;
             }
 
@@ -55,42 +53,45 @@ public class MatchingClient(HttpClient httpClient, IHttpContextAccessor httpCont
             {
                 if (response.StatusCode == HttpStatusCode.NotFound)
                 {
-                    return null;
+                    return default;
                 }
 
                 if ((int)response.StatusCode >= 500 && attempt < maxAttempts)
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), totalTimeout.Token);
+                    await DelayBeforeRetryAsync(attempt, totalTimeout.Token);
                     continue;
                 }
 
                 response.EnsureSuccessStatusCode();
 
-                QuoteResult? quote;
                 try
                 {
-                    quote = await response.Content.ReadFromJsonAsync<QuoteResult>(cancellationToken: attemptTimeout.Token);
+                    var result = await response.Content.ReadFromJsonAsync<TResponse>(
+                        cancellationToken: attemptTimeout.Token);
+                    return result ?? throw new InvalidDataException(
+                        $"Matching service trả về response rỗng cho {path} thành công.");
                 }
                 catch (OperationCanceledException) when (attempt < maxAttempts && !totalTimeout.IsCancellationRequested)
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), totalTimeout.Token);
-                    continue;
+                    await DelayBeforeRetryAsync(attempt, totalTimeout.Token);
                 }
                 catch (JsonException ex)
                 {
-                    throw new InvalidDataException("Matching service trả về JSON quote không hợp lệ.", ex);
+                    throw new InvalidDataException(
+                        $"Matching service trả về JSON không hợp lệ cho {path}.", ex);
                 }
-
-                return quote ?? throw new InvalidDataException("Matching service trả về response rỗng cho quote thành công.");
             }
         }
 
-        throw new InvalidOperationException("Matching retry loop kết thúc ngoài dự kiến.");
+        throw new HttpRequestException($"Matching service không phản hồi {path} sau khi thử lại.");
     }
 
-    private HttpRequestMessage CreateQuoteRequest(object payload)
+    private static Task DelayBeforeRetryAsync(int attempt, CancellationToken cancellationToken) =>
+        Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
+
+    private HttpRequestMessage CreateRequest(string path, object payload)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/quote")
+        var request = new HttpRequestMessage(HttpMethod.Post, path)
         {
             Content = JsonContent.Create(payload)
         };

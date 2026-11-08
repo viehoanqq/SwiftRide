@@ -37,4 +37,29 @@ public class TripsController(TripAppService tripService) : ControllerBase
     [HttpGet("{id:guid}")]
     public Task<TripDetailDto> GetById(Guid id)
         => tripService.GetByIdAsync(id, UserId, User.FindFirstValue("role")!);
+
+    [HttpPost("{id:guid}/driver-accept")]
+    [Authorize(Roles = "Driver")]
+    public Task<TripDriverActionResponse> AcceptOffer(Guid id, CancellationToken cancellationToken)
+        => tripService.AcceptOfferAsync(id, UserId, cancellationToken);
+
+    [HttpPost("{id:guid}/driver-reject")]
+    [Authorize(Roles = "Driver")]
+    public Task<TripDriverActionResponse> RejectOffer(Guid id, CancellationToken cancellationToken)
+        => tripService.RejectOfferAsync(id, UserId, cancellationToken);
+
+    [HttpPost("{id:guid}/en-route")]
+    [Authorize(Roles = "Driver")]
+    public Task<TripDriverActionResponse> MarkEnRoute(Guid id, CancellationToken cancellationToken)
+        => tripService.MarkEnRouteAsync(id, UserId, cancellationToken);
+
+    [HttpPost("{id:guid}/pickup")]
+    [Authorize(Roles = "Driver")]
+    public Task<TripDriverActionResponse> MarkPickedUp(Guid id, CancellationToken cancellationToken)
+        => tripService.MarkPickedUpAsync(id, UserId, cancellationToken);
+
+    [HttpPost("{id:guid}/dropoff")]
+    [Authorize(Roles = "Driver")]
+    public Task<TripDriverActionResponse> MarkDroppedOff(Guid id, CancellationToken cancellationToken)
+        => tripService.MarkDroppedOffAsync(id, UserId, cancellationToken);
 }

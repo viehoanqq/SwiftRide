@@ -36,6 +36,24 @@ public abstract class TripState
     public virtual void Confirm(Trip trip, PaymentMethod method)
         => throw InvalidTransition(nameof(Confirm));
 
+    public virtual void OfferDriver(Trip trip, Guid driverId, int attemptNo)
+        => throw InvalidTransition(nameof(OfferDriver));
+
+    public virtual void AcceptOffer(Trip trip, Guid driverId)
+        => throw InvalidTransition(nameof(AcceptOffer));
+
+    public virtual void RejectOffer(Trip trip, Guid driverId)
+        => throw InvalidTransition(nameof(RejectOffer));
+
+    public virtual void MarkEnRoute(Trip trip)
+        => throw InvalidTransition(nameof(MarkEnRoute));
+
+    public virtual void MarkPickedUp(Trip trip)
+        => throw InvalidTransition(nameof(MarkPickedUp));
+
+    public virtual void MarkDroppedOff(Trip trip)
+        => throw InvalidTransition(nameof(MarkDroppedOff));
+
     public virtual void Cancel(Trip trip)
         => throw InvalidTransition(nameof(Cancel));
 

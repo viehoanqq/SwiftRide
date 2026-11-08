@@ -7,7 +7,7 @@ using TripService.Domain.Exceptions;
 
 namespace TripService.Application.Services;
 
-public class TripAppService(ITripRepository trips, IMatchingClient matching)
+public class TripAppService(ITripRepository trips, IMatchingClient matching) : ITripDriverWorkflow
 {
     // MINH: tạo chuyến → /quote → Quoted hoặc Failed. 409 nếu đang có chuyến chưa kết thúc
     public async Task<CreateTripResponse> CreateAsync(Guid riderId, CreateTripRequest request)
@@ -118,6 +118,25 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching)
             }
 
             trip.Confirm(paymentMethod);
+
+            var matchedDriver = await matching.MatchAsync(new MatchDriverRequest(
+                (double)trip.Location.PickupLat,
+                (double)trip.Location.PickupLng));
+
+            if (matchedDriver is null)
+            {
+                trip.MarkFailed();
+            }
+            else if (!Guid.TryParse(matchedDriver.DriverId, out var driverId) || driverId == Guid.Empty)
+            {
+                throw new InvalidDataException(
+                    "Matching service returned a DriverId that is not a valid TripDB user GUID.");
+            }
+            else
+            {
+                var offer = trip.OfferDriver(driverId, trip.Offers.Count + 1);
+                trips.AddOffer(offer);
+            }
         }
 
         await trips.SaveChangesAsync();
@@ -149,6 +168,46 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching)
 
         return trip.ToTripDetailDto();
     }
+
+    public Task<IReadOnlyList<DriverOfferDto>> GetOffersAsync(
+        Guid driverId,
+        CancellationToken cancellationToken)
+        => throw new NotImplementedException("Driver offer workflow is not implemented yet.");
+
+    public Task<TripDetailDto?> GetCurrentTripAsync(
+        Guid driverId,
+        CancellationToken cancellationToken)
+        => throw new NotImplementedException("Driver current-trip workflow is not implemented yet.");
+
+    public Task<TripDriverActionResponse> AcceptOfferAsync(
+        Guid tripId,
+        Guid driverId,
+        CancellationToken cancellationToken)
+        => throw new NotImplementedException("Driver offer acceptance is not implemented yet.");
+
+    public Task<TripDriverActionResponse> RejectOfferAsync(
+        Guid tripId,
+        Guid driverId,
+        CancellationToken cancellationToken)
+        => throw new NotImplementedException("Driver offer rejection is not implemented yet.");
+
+    public Task<TripDriverActionResponse> MarkEnRouteAsync(
+        Guid tripId,
+        Guid driverId,
+        CancellationToken cancellationToken)
+        => throw new NotImplementedException("En-route workflow is not implemented yet.");
+
+    public Task<TripDriverActionResponse> MarkPickedUpAsync(
+        Guid tripId,
+        Guid driverId,
+        CancellationToken cancellationToken)
+        => throw new NotImplementedException("Pickup workflow is not implemented yet.");
+
+    public Task<TripDriverActionResponse> MarkDroppedOffAsync(
+        Guid tripId,
+        Guid driverId,
+        CancellationToken cancellationToken)
+        => throw new NotImplementedException("Dropoff workflow is not implemented yet.");
 
     private static void ValidateLocation(LocationDto? location, string label)
     {
