@@ -6,6 +6,7 @@ using TripService.Infrastructure.Persistence;
 
 using TripService.Application.Interfaces;          // thêm
 using TripService.Infrastructure.Auth;             // thêm
+using TripService.Infrastructure.Clients;
 using TripService.Infrastructure.Repositories; 
 
 namespace TripService.Infrastructure;
@@ -20,6 +21,15 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, PasswordHasher>();  // thêm: không giữ trạng thái nên Singleton   
         services.AddSingleton<ITokenService, JwtTokenService>();
         services.AddScoped<ITripRepository, TripRepository>();     // thêm: dùng DbContext nên Scoped
+
+        services.AddHttpContextAccessor();
+        services.AddHttpClient<IMatchingClient, MatchingClient>(client =>
+        {
+            var baseUrl = configuration["Services:MatchingService"] ?? "http://localhost:5002";
+            client.BaseAddress = new Uri(baseUrl);
+            client.Timeout = TimeSpan.FromSeconds(3);
+        });
+
         return services;
     }
 
