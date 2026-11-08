@@ -33,5 +33,6 @@ public class TripRepository(TripDbContext db) : ITripRepository
             .Include(t => t.Location)
             .Include(t => t.Fare)
             .Include(t => t.Offers)
+                .ThenInclude(offer => offer.Driver)
             .Include(t => t.History.OrderBy(h => h.Id));   // lịch sử theo đúng thứ tự xảy ra
 }

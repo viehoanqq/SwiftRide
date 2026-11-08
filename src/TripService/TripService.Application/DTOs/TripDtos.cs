@@ -1,4 +1,5 @@
 using TripService.Domain.Entities;
+using TripService.Domain.Enums;
 
 namespace TripService.Application.DTOs;
 
@@ -32,8 +33,14 @@ public record QuoteResult(string QuoteId, double DistanceKm, double DurationMin,
 
 public static class TripDtoMappings
 {
-    public static TripDetailDto ToTripDetailDto(this Trip trip) =>
-        new(
+    public static TripDetailDto ToTripDetailDto(this Trip trip)
+    {
+        var acceptedOffer = trip.Offers
+            .Where(offer => offer.Status == OfferStatus.Accepted)
+            .OrderByDescending(offer => offer.AttemptNo)
+            .FirstOrDefault();
+
+        return new TripDetailDto(
             trip.Id,
             trip.Status.ToString(),
             new LocationDto(
@@ -53,7 +60,9 @@ public static class TripDtoMappings
                     trip.Fare.DurationMin,
                     trip.Fare.Strategy,
                     trip.Fare.Status.ToString()),
-            Driver: null,
+            acceptedOffer is null
+                ? null
+                : new TripDriverDto(acceptedOffer.DriverId, acceptedOffer.Driver.FullName),
             trip.History
                 .OrderBy(history => history.Id)
                 .Select(history => new TripHistoryDto(
@@ -61,4 +70,5 @@ public static class TripDtoMappings
                     history.ToStatus.ToString(),
                     history.CreatedAt))
                 .ToList());
+    }
 }

@@ -82,7 +82,7 @@ public class TripDriverOfferConfiguration : IEntityTypeConfiguration<TripDriverO
         builder.HasIndex(o => new { o.TripId, o.AttemptNo }).IsUnique();
         builder.HasIndex(o => new { o.DriverId, o.Status });
 
-        builder.HasOne<User>()
+        builder.HasOne(o => o.Driver)
             .WithMany()
             .HasForeignKey(o => o.DriverId)
             .OnDelete(DeleteBehavior.Restrict);

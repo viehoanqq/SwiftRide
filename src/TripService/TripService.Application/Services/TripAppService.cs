@@ -124,8 +124,31 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching)
         return new ConfirmTripResponse(trip.Status.ToString());
     }
 
-    // HOÀNG: chi tiết chuyến. 403 nếu không phải rider của chuyến hoặc tài xế được gán
-    public Task<TripDetailDto> GetByIdAsync(Guid tripId, Guid userId, string role) => throw new NotImplementedException();
+    // Rider của chuyến và tài xế đang được offer hoặc đã nhận chuyến mới được xem chi tiết.
+    public async Task<TripDetailDto> GetByIdAsync(Guid tripId, Guid userId, string role)
+    {
+        var trip = await trips.GetByIdAsync(tripId);
+        if (trip is null)
+        {
+            throw new NotFoundException("TRIP_NOT_FOUND", $"Không tìm thấy chuyến đi với ID {tripId}");
+        }
+
+        var isRiderOwner = string.Equals(role, "Rider", StringComparison.OrdinalIgnoreCase)
+            && trip.RiderId == userId;
+        var isAssignedDriver = string.Equals(role, "Driver", StringComparison.OrdinalIgnoreCase)
+            && trip.Offers.Any(offer =>
+                offer.DriverId == userId &&
+                offer.Status is OfferStatus.Pending or OfferStatus.Accepted);
+
+        if (!isRiderOwner && !isAssignedDriver)
+        {
+            throw new ForbiddenException(
+                "FORBIDDEN",
+                "Bạn không có quyền xem chi tiết chuyến đi này.");
+        }
+
+        return trip.ToTripDetailDto();
+    }
 
     private static void ValidateLocation(LocationDto? location, string label)
     {
