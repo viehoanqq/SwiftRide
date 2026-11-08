@@ -200,4 +200,53 @@ public class MatchingClientTests
         // Act & Assert
         await Assert.ThrowsAnyAsync<HttpRequestException>(() => client.GetQuoteAsync(tripId, pickup, dropoff));
     }
+
+    [Fact]
+    public async Task GetQuoteAsync_ShouldNotRetry_WhenResponseIsBadRequest()
+    {
+        var attempts = 0;
+        var handlerMock = new Mock<HttpMessageHandler>();
+        handlerMock.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .Returns(() =>
+            {
+                attempts++;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest));
+            });
+
+        var httpClient = new HttpClient(handlerMock.Object)
+        {
+            BaseAddress = new Uri("http://localhost:5002")
+        };
+        var client = new MatchingClient(httpClient, _mockHttpContextAccessor.Object);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            client.GetQuoteAsync(Guid.NewGuid(), new GeoPointDto(10, 10), new GeoPointDto(11, 11)));
+
+        Assert.Equal(1, attempts);
+    }
+
+    [Fact]
+    public async Task GetQuoteAsync_ShouldThrow_WhenSuccessfulResponseHasNoBody()
+    {
+        var handlerMock = new Mock<HttpMessageHandler>();
+        handlerMock.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK));
+
+        var httpClient = new HttpClient(handlerMock.Object)
+        {
+            BaseAddress = new Uri("http://localhost:5002")
+        };
+        var client = new MatchingClient(httpClient, _mockHttpContextAccessor.Object);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            client.GetQuoteAsync(Guid.NewGuid(), new GeoPointDto(10, 10), new GeoPointDto(11, 11)));
+    }
 }

@@ -23,11 +23,18 @@ public static class DependencyInjection
         services.AddScoped<ITripRepository, TripRepository>();     // thêm: dùng DbContext nên Scoped
 
         services.AddHttpContextAccessor();
+        var matchingServiceUrl = configuration["Services:MatchingService"];
+        if (!Uri.TryCreate(matchingServiceUrl, UriKind.Absolute, out var matchingServiceUri) ||
+            (matchingServiceUri.Scheme != Uri.UriSchemeHttp && matchingServiceUri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new InvalidOperationException(
+                "Configuration 'Services:MatchingService' must be an absolute HTTP or HTTPS URL.");
+        }
+
         services.AddHttpClient<IMatchingClient, MatchingClient>(client =>
         {
-            var baseUrl = configuration["Services:MatchingService"] ?? "http://localhost:5002";
-            client.BaseAddress = new Uri(baseUrl);
-            client.Timeout = TimeSpan.FromSeconds(3);
+            client.BaseAddress = matchingServiceUri;
+            client.Timeout = Timeout.InfiniteTimeSpan;
         });
 
         return services;

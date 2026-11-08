@@ -20,47 +20,38 @@ public class TripConfirmTests
         _service = new TripAppService(_mockTripRepo.Object, _mockMatchingClient.Object);
     }
 
-    private static Trip CreateSampleQuotedTrip(Guid tripId, Guid riderId)
+    private static Trip CreateSampleQuotedTrip(Guid riderId)
     {
-        return new Trip
+        var trip = Trip.Create(riderId, new TripLocation
         {
-            Id = tripId,
-            RiderId = riderId,
-            Status = TripStatus.Quoted,
-            CreatedAt = DateTime.UtcNow.AddMinutes(-5),
-            UpdatedAt = DateTime.UtcNow.AddMinutes(-5),
-            Location = new TripLocation
-            {
-                TripId = tripId,
-                PickupLat = 10.7725m,
-                PickupLng = 10.6980m,
-                PickupAddress = "Quận 1",
-                DropoffLat = 10.7750m,
-                DropoffLng = 10.7000m,
-                DropoffAddress = "Quận 3"
-            },
-            Fare = new TripFare
-            {
-                TripId = tripId,
-                QuoteId = "quote-001",
-                Price = 50000m,
-                Status = FareStatus.Pending,
-                Strategy = "Standard",
-                DistanceKm = 3.0,
-                DurationMin = 10.0,
-                QuotedAt = DateTime.UtcNow.AddMinutes(-5)
-            },
-            History = []
-        };
+            PickupLat = 10.7725m,
+            PickupLng = 10.6980m,
+            PickupAddress = "Quận 1",
+            DropoffLat = 10.7750m,
+            DropoffLng = 10.7000m,
+            DropoffAddress = "Quận 3"
+        });
+        trip.MarkQuoted(new TripFare
+        {
+            QuoteId = "quote-001",
+            Price = 50000m,
+            Status = FareStatus.Pending,
+            Strategy = "Standard",
+            DistanceKm = 3.0,
+            DurationMin = 10.0,
+            QuotedAt = DateTime.UtcNow.AddMinutes(-5)
+        });
+
+        return trip;
     }
 
     [Fact]
     public async Task ConfirmAsync_ShouldCancelTrip_WhenAcceptIsFalse()
     {
         // Arrange
-        var tripId = Guid.NewGuid();
         var riderId = Guid.NewGuid();
-        var trip = CreateSampleQuotedTrip(tripId, riderId);
+        var trip = CreateSampleQuotedTrip(riderId);
+        var tripId = trip.Id;
 
         _mockTripRepo.Setup(r => r.GetByIdAsync(tripId)).ReturnsAsync(trip);
 
@@ -87,9 +78,9 @@ public class TripConfirmTests
     public async Task ConfirmAsync_ShouldAcceptFareAndSetPaymentMethod_WhenAcceptIsTrue(string paymentMethodInput, PaymentMethod expectedMethod)
     {
         // Arrange
-        var tripId = Guid.NewGuid();
         var riderId = Guid.NewGuid();
-        var trip = CreateSampleQuotedTrip(tripId, riderId);
+        var trip = CreateSampleQuotedTrip(riderId);
+        var tripId = trip.Id;
 
         _mockTripRepo.Setup(r => r.GetByIdAsync(tripId)).ReturnsAsync(trip);
 
@@ -99,8 +90,8 @@ public class TripConfirmTests
         var response = await _service.ConfirmAsync(tripId, riderId, request);
 
         // Assert
-        Assert.Equal("Quoted", response.Status);
-        Assert.Equal(TripStatus.Quoted, trip.Status);
+        Assert.Equal("DriverOffered", response.Status);
+        Assert.Equal(TripStatus.DriverOffered, trip.Status);
         Assert.NotNull(trip.Fare);
         Assert.Equal(FareStatus.Accepted, trip.Fare.Status);
         Assert.Equal(expectedMethod, trip.Fare.PaymentMethod);
@@ -129,10 +120,10 @@ public class TripConfirmTests
     public async Task ConfirmAsync_ShouldThrowForbidden_WhenUserIsNotTripRider()
     {
         // Arrange
-        var tripId = Guid.NewGuid();
         var tripRiderId = Guid.NewGuid();
         var otherUserId = Guid.NewGuid();
-        var trip = CreateSampleQuotedTrip(tripId, tripRiderId);
+        var trip = CreateSampleQuotedTrip(tripRiderId);
+        var tripId = trip.Id;
 
         _mockTripRepo.Setup(r => r.GetByIdAsync(tripId)).ReturnsAsync(trip);
 
@@ -145,23 +136,43 @@ public class TripConfirmTests
     }
 
     [Theory]
-    [InlineData(TripStatus.Requested)]
-    [InlineData(TripStatus.DriverOffered)]
-    [InlineData(TripStatus.DriverAccepted)]
-    [InlineData(TripStatus.Cancelled)]
-    [InlineData(TripStatus.Paid)]
-    [InlineData(TripStatus.Failed)]
-    public async Task ConfirmAsync_ShouldThrowInvalidTripStateException_WhenStatusIsNotQuoted(TripStatus invalidStatus)
+    [InlineData(TripStatus.Requested, true)]
+    [InlineData(TripStatus.Requested, false)]
+    [InlineData(TripStatus.DriverOffered, true)]
+    [InlineData(TripStatus.DriverOffered, false)]
+    [InlineData(TripStatus.Cancelled, true)]
+    [InlineData(TripStatus.Cancelled, false)]
+    [InlineData(TripStatus.Failed, true)]
+    [InlineData(TripStatus.Failed, false)]
+    public async Task ConfirmAsync_ShouldThrowInvalidTripStateException_WhenStatusIsNotQuoted(
+        TripStatus invalidStatus,
+        bool accept)
     {
         // Arrange
-        var tripId = Guid.NewGuid();
         var riderId = Guid.NewGuid();
-        var trip = CreateSampleQuotedTrip(tripId, riderId);
-        trip.Status = invalidStatus;
+        var trip = CreateSampleQuotedTrip(riderId);
+        switch (invalidStatus)
+        {
+            case TripStatus.Requested:
+                trip = Trip.Create(riderId, trip.Location);
+                break;
+            case TripStatus.DriverOffered:
+                trip.Confirm(PaymentMethod.Wallet);
+                break;
+            case TripStatus.Cancelled:
+                trip.Cancel();
+                break;
+            case TripStatus.Failed:
+                trip.MarkFailed();
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(invalidStatus), invalidStatus, null);
+        }
+        var tripId = trip.Id;
 
         _mockTripRepo.Setup(r => r.GetByIdAsync(tripId)).ReturnsAsync(trip);
 
-        var request = new ConfirmTripRequest(Accept: true, PaymentMethod: "WALLET");
+        var request = new ConfirmTripRequest(Accept: accept, PaymentMethod: accept ? "WALLET" : null);
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidTripStateException>(() => _service.ConfirmAsync(tripId, riderId, request));
@@ -176,9 +187,9 @@ public class TripConfirmTests
     public async Task ConfirmAsync_ShouldThrowValidationException_WhenAcceptIsTrueAndPaymentMethodInvalid(string? invalidMethod)
     {
         // Arrange
-        var tripId = Guid.NewGuid();
         var riderId = Guid.NewGuid();
-        var trip = CreateSampleQuotedTrip(tripId, riderId);
+        var trip = CreateSampleQuotedTrip(riderId);
+        var tripId = trip.Id;
 
         _mockTripRepo.Setup(r => r.GetByIdAsync(tripId)).ReturnsAsync(trip);
 

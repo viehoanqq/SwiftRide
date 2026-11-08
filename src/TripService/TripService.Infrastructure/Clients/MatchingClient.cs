@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using TripService.Application.DTOs;
 using TripService.Application.Interfaces;
@@ -9,6 +10,9 @@ namespace TripService.Infrastructure.Clients;
 
 public class MatchingClient(HttpClient httpClient, IHttpContextAccessor httpContextAccessor) : IMatchingClient
 {
+    private static readonly TimeSpan TotalTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan AttemptTimeout = TimeSpan.FromSeconds(1);
+
     public async Task<QuoteResult?> GetQuoteAsync(Guid tripId, GeoPointDto pickup, GeoPointDto dropoff)
     {
         var payload = new
@@ -18,52 +22,97 @@ public class MatchingClient(HttpClient httpClient, IHttpContextAccessor httpCont
             dropoff
         };
 
-        const int maxRetries = 3;
-        for (var attempt = 1; attempt <= maxRetries; attempt++)
+        const int maxAttempts = 3;
+        using var totalTimeout = new CancellationTokenSource(TotalTimeout);
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
+            using var attemptTimeout = CancellationTokenSource.CreateLinkedTokenSource(totalTimeout.Token);
+            attemptTimeout.CancelAfter(AttemptTimeout);
+
+            using var request = CreateQuoteRequest(payload);
+
+            HttpResponseMessage response;
             try
             {
-                using var request = new HttpRequestMessage(HttpMethod.Post, "/quote")
-                {
-                    Content = JsonContent.Create(payload)
-                };
+                response = await httpClient.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    attemptTimeout.Token);
+            }
+            catch (HttpRequestException) when (attempt < maxAttempts && !totalTimeout.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), totalTimeout.Token);
+                continue;
+            }
+            catch (OperationCanceledException) when (attempt < maxAttempts && !totalTimeout.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), totalTimeout.Token);
+                continue;
+            }
 
-                var authHeader = httpContextAccessor.HttpContext?.Request.Headers.Authorization.ToString();
-                if (!string.IsNullOrWhiteSpace(authHeader))
-                {
-                    if (AuthenticationHeaderValue.TryParse(authHeader, out var parsedAuth))
-                    {
-                        request.Headers.Authorization = parsedAuth;
-                    }
-                    else
-                    {
-                        request.Headers.TryAddWithoutValidation("Authorization", authHeader);
-                    }
-                }
-
-                using var response = await httpClient.SendAsync(request);
-
+            using (response)
+            {
                 if (response.StatusCode == HttpStatusCode.NotFound)
                 {
                     return null;
                 }
 
-                if ((int)response.StatusCode >= 500 && attempt < maxRetries)
+                if ((int)response.StatusCode >= 500 && attempt < maxAttempts)
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt));
+                    await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), totalTimeout.Token);
                     continue;
                 }
 
                 response.EnsureSuccessStatusCode();
 
-                return await response.Content.ReadFromJsonAsync<QuoteResult>();
-            }
-            catch (Exception ex) when ((ex is HttpRequestException || ex is TaskCanceledException || ex is TimeoutException) && attempt < maxRetries)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt));
+                QuoteResult? quote;
+                try
+                {
+                    quote = await response.Content.ReadFromJsonAsync<QuoteResult>(cancellationToken: attemptTimeout.Token);
+                }
+                catch (OperationCanceledException) when (attempt < maxAttempts && !totalTimeout.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), totalTimeout.Token);
+                    continue;
+                }
+                catch (JsonException ex)
+                {
+                    throw new InvalidDataException("Matching service trả về JSON quote không hợp lệ.", ex);
+                }
+
+                return quote ?? throw new InvalidDataException("Matching service trả về response rỗng cho quote thành công.");
             }
         }
 
-        throw new HttpRequestException("Matching service không phản hồi sau khi thử lại nhiều lần.");
+        throw new InvalidOperationException("Matching retry loop kết thúc ngoài dự kiến.");
+    }
+
+    private HttpRequestMessage CreateQuoteRequest(object payload)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/quote")
+        {
+            Content = JsonContent.Create(payload)
+        };
+
+        ForwardAuthorizationHeader(request);
+        return request;
+    }
+
+    private void ForwardAuthorizationHeader(HttpRequestMessage request)
+    {
+        var authorization = httpContextAccessor.HttpContext?.Request.Headers.Authorization.ToString();
+        if (string.IsNullOrWhiteSpace(authorization))
+        {
+            return;
+        }
+
+        if (AuthenticationHeaderValue.TryParse(authorization, out var parsedAuthorization))
+        {
+            request.Headers.Authorization = parsedAuthorization;
+            return;
+        }
+
+        request.Headers.TryAddWithoutValidation("Authorization", authorization);
     }
 }

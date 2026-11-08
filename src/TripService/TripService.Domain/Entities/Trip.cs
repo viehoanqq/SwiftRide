@@ -99,10 +99,19 @@ public class Trip
         }
 
         Fare.PaymentMethod = method;
-        
-        // Nếu entity TripFare của bạn có thêm trường trạng thái hoặc thời điểm xác nhận (vd: Status, ConfirmedAt), 
-        // hãy mở comment dòng tương ứng bên dưới:
-        // Fare.Status = FareStatus.Confirmed;
-        // Fare.ConfirmedAt = DateTime.UtcNow;
+        Fare.Status = FareStatus.Accepted;
+        Fare.RespondedAt = DateTime.UtcNow;
+    }
+
+    internal void RejectFare()
+    {
+        if (Fare is null)
+        {
+            throw new InvalidTripStateException(
+                "INVALID_TRIP_STATE: Không thể từ chối chuyến đi khi chưa có thông tin giá cước (Fare).");
+        }
+
+        Fare.Status = FareStatus.Rejected;
+        Fare.RespondedAt = DateTime.UtcNow;
     }
 }

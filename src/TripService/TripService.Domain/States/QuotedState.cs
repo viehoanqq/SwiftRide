@@ -20,6 +20,7 @@ public class QuotedState : TripState
 
     public override void Cancel(Trip trip)
     {
+        trip.RejectFare();
         trip.TransitionTo(TripStatus.Cancelled);
     }
 }

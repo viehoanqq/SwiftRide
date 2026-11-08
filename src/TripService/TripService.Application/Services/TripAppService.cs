@@ -2,6 +2,7 @@ using TripService.Application.DTOs;
 using TripService.Application.Exceptions;
 using TripService.Application.Interfaces;
 using TripService.Domain.Enums;
+using TripService.Domain.Exceptions;
 
 namespace TripService.Application.Services;
 
@@ -27,6 +28,12 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching)
             throw new ForbiddenException("FORBIDDEN", "Bạn không có quyền thao tác trên chuyến đi này.");
         }
 
+        if (trip.Status != TripStatus.Quoted)
+        {
+            throw new InvalidTripStateException(
+                $"INVALID_TRIP_STATE: Không thể xác nhận hoặc từ chối chuyến đi khi đang ở trạng thái '{trip.Status}'.");
+        }
+
         if (!request.Accept)
         {
             trip.Cancel();
@@ -39,7 +46,8 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching)
             }
 
             if (!Enum.TryParse<PaymentMethod>(request.PaymentMethod, ignoreCase: true, out var paymentMethod)
-                || !Enum.IsDefined(paymentMethod))
+                || !Enum.IsDefined(paymentMethod)
+                || !string.Equals(request.PaymentMethod, paymentMethod.ToString(), StringComparison.OrdinalIgnoreCase))
             {
                 throw new ValidationException("Phương thức thanh toán không hợp lệ. Chỉ chấp nhận WALLET hoặc CARD.");
             }
