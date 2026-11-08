@@ -1,6 +1,7 @@
 using TripService.Application.DTOs;
 using TripService.Application.Exceptions;
 using TripService.Application.Interfaces;
+using TripService.Domain.Entities;
 using TripService.Domain.Enums;
 using TripService.Domain.Exceptions;
 
@@ -9,10 +10,74 @@ namespace TripService.Application.Services;
 public class TripAppService(ITripRepository trips, IMatchingClient matching)
 {
     // MINH: tạo chuyến → /quote → Quoted hoặc Failed. 409 nếu đang có chuyến chưa kết thúc
-    public Task<CreateTripResponse> CreateAsync(Guid riderId, CreateTripRequest request) => throw new NotImplementedException();
+    public async Task<CreateTripResponse> CreateAsync(Guid riderId, CreateTripRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ValidateLocation(request.Pickup, "Điểm đón");
+        ValidateLocation(request.Dropoff, "Điểm đến");
+
+        if (await trips.GetActiveByRiderAsync(riderId) is not null)
+        {
+            throw new ConflictException(
+                "ACTIVE_TRIP_EXISTS",
+                "Bạn đang có chuyến đi chưa kết thúc.");
+        }
+
+        var pickup = request.Pickup;
+        var dropoff = request.Dropoff;
+        var trip = Trip.Create(
+            riderId,
+            new TripLocation
+            {
+                PickupLat = (decimal)pickup.Lat,
+                PickupLng = (decimal)pickup.Lng,
+                PickupAddress = pickup.Address.Trim(),
+                DropoffLat = (decimal)dropoff.Lat,
+                DropoffLng = (decimal)dropoff.Lng,
+                DropoffAddress = dropoff.Address.Trim()
+            });
+
+        var quote = await matching.GetQuoteAsync(
+            trip.Id,
+            new GeoPointDto(pickup.Lat, pickup.Lng),
+            new GeoPointDto(dropoff.Lat, dropoff.Lng));
+
+        if (quote is null)
+        {
+            trip.MarkFailed();
+        }
+        else
+        {
+            trip.MarkQuoted(new TripFare
+            {
+                QuoteId = quote.QuoteId,
+                Price = quote.Price,
+                DistanceKm = quote.DistanceKm,
+                DurationMin = quote.DurationMin,
+                Strategy = quote.Strategy,
+                Status = FareStatus.Pending,
+                QuotedAt = DateTime.UtcNow
+            });
+        }
+
+        await trips.AddAsync(trip);
+        await trips.SaveChangesAsync();
+
+        return new CreateTripResponse(
+            trip.Id,
+            trip.Status.ToString(),
+            trip.Fare?.Price,
+            trip.Fare?.DistanceKm,
+            trip.Fare?.DurationMin,
+            trip.Fare?.Strategy);
+    }
 
     // MINH: chuyến chưa kết thúc của rider, null nếu không có
-    public Task<TripDetailDto?> GetCurrentAsync(Guid riderId) => throw new NotImplementedException();
+    public async Task<TripDetailDto?> GetCurrentAsync(Guid riderId)
+    {
+        var trip = await trips.GetActiveByRiderAsync(riderId);
+        return trip?.ToTripDetailDto();
+    }
 
     // ĐẠT: accept → Fare Accepted + PaymentMethod; từ chối → Cancelled. Chỉ rider của chuyến
     public async Task<ConfirmTripResponse> ConfirmAsync(Guid tripId, Guid riderId, ConfirmTripRequest request)
@@ -61,4 +126,18 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching)
 
     // HOÀNG: chi tiết chuyến. 403 nếu không phải rider của chuyến hoặc tài xế được gán
     public Task<TripDetailDto> GetByIdAsync(Guid tripId, Guid userId, string role) => throw new NotImplementedException();
+
+    private static void ValidateLocation(LocationDto? location, string label)
+    {
+        if (location is null ||
+            !double.IsFinite(location.Lat) ||
+            !double.IsFinite(location.Lng) ||
+            location.Lat is < -90 or > 90 ||
+            location.Lng is < -180 or > 180 ||
+            string.IsNullOrWhiteSpace(location.Address))
+        {
+            throw new ValidationException($"{label} phải có tọa độ và địa chỉ hợp lệ.");
+        }
+    }
+
 }

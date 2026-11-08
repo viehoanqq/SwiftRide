@@ -18,7 +18,7 @@ public class TripsController(TripAppService tripService) : ControllerBase
     public async Task<ActionResult<CreateTripResponse>> Create(CreateTripRequest request)
     {
         var result = await tripService.CreateAsync(UserId, request);
-        return StatusCode(StatusCodes.Status201Created, result);
+        return CreatedAtAction(nameof(GetById), new { id = result.TripId }, result);
     }
 
     [HttpGet("me/current")]
