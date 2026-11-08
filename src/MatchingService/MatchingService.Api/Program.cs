@@ -1,4 +1,7 @@
 using MatchingService.Infrastructure;
+using MatchingService.Application.Interfaces;
+using MatchingService.Application.Services;
+using MatchingService.Domain.Pricing;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -9,6 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<MatchingService.Application.Services.MatchAppService>();
 builder.Services.AddScoped<MatchingService.Application.Services.DriverAppService>();
+builder.Services.AddScoped<QuoteAppService>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -69,7 +73,25 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             }
     };
     });
+var pricingSection = builder.Configuration.GetRequiredSection("Pricing");
 
+var pricingParameters = new PricingParameters(
+    pricingSection.GetValue<decimal>("Cd"),
+    pricingSection.GetValue<decimal>("Ct"),
+    pricingSection.GetValue<decimal>("S"),
+    pricingSection.GetValue<decimal>("Cm"),
+    pricingSection.GetValue<decimal>("Eta"),
+    pricingSection.GetValue<decimal>("Tax"));
+
+// Kiểm tra giá trị cấu hình ngay khi khởi động.
+_ = new StandardPricing().Calculate(0, 0, pricingParameters);
+
+builder.Services.AddSingleton(pricingParameters);
+builder.Services.AddSingleton<StandardPricing>();
+builder.Services.AddSingleton<SurgePricing>();
+builder.Services.AddSingleton<PromoPricing>();
+builder.Services.AddSingleton<
+    IPricingStrategySelector, PricingStrategySelector>();
 
 builder.Services.AddAuthorization();
 

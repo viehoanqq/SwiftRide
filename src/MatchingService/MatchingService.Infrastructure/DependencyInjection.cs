@@ -12,7 +12,7 @@ public static class DependencyInjection
     {
         services.AddSingleton(new MongoContext(configuration.GetConnectionString("MatchDb")!));
         services.AddScoped<IDriverRepository, DriverRepository>();
-
+        services.AddScoped<IQuoteRepository, QuoteRepository>();
         return services;
     }
 
