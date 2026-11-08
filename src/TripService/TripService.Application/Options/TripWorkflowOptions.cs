@@ -4,5 +4,5 @@ public sealed class TripWorkflowOptions
 {
     public const string SectionName = "Trip";
 
-    public int MaxOfferAttempts { get; set; } = 2;
+    public int MaxOfferAttempts { get; set; } = 3;
 }

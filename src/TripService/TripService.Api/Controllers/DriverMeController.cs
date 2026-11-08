@@ -16,7 +16,10 @@ public class DriverMeController(ITripDriverWorkflow tripWorkflow) : ControllerBa
     [HttpGet("offers")]
     public async Task<ActionResult<IReadOnlyList<DriverOfferDto>>> GetOffers(
         CancellationToken cancellationToken)
-        => Ok(await tripWorkflow.GetOffersAsync(DriverId, cancellationToken));
+    {
+        var offers = await tripWorkflow.GetOffersAsync(DriverId, cancellationToken);
+        return Ok(offers);
+    }
 
     [HttpGet("current-trip")]
     public async Task<ActionResult<TripDetailDto>> GetCurrentTrip(
@@ -24,5 +27,23 @@ public class DriverMeController(ITripDriverWorkflow tripWorkflow) : ControllerBa
     {
         var trip = await tripWorkflow.GetCurrentTripAsync(DriverId, cancellationToken);
         return trip is null ? NoContent() : Ok(trip);
+    }
+
+    [HttpPost("offers/{tripId:guid}/accept")]
+    public async Task<ActionResult<TripDriverActionResponse>> AcceptOffer(
+        Guid tripId, 
+        CancellationToken cancellationToken)
+    {
+        var result = await tripWorkflow.AcceptOfferAsync(tripId, DriverId, cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpPost("offers/{tripId:guid}/reject")]
+    public async Task<ActionResult<TripDriverActionResponse>> RejectOffer(
+        Guid tripId, 
+        CancellationToken cancellationToken)
+    {
+        var result = await tripWorkflow.RejectOfferAsync(tripId, DriverId, cancellationToken);
+        return Ok(result);
     }
 }
