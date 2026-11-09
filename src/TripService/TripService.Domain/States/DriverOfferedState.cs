@@ -30,4 +30,15 @@ public class DriverOfferedState : TripState
     {
         trip.TransitionTo(TripStatus.Cancelled);
     }
+
+    public override void AcceptOffer(Trip trip, Guid driverId)
+{
+    trip.RespondToOffer(driverId, OfferStatus.Accepted);
+    trip.TransitionTo(TripStatus.DriverAccepted);
+}
+
+public override void RejectOffer(Trip trip, Guid driverId)
+{
+    trip.RespondToOffer(driverId, OfferStatus.Rejected);
+}
 }   

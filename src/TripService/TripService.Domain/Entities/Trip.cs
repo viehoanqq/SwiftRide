@@ -93,6 +93,11 @@ public class Trip
 
     internal void TransitionTo(TripStatus newStatus, bool isInitial = false)
     {
+        if (!isInitial && Status == newStatus)
+{
+    throw new InvalidTripStateException(
+        $"INVALID_TRIP_STATE: Chuyến đi đã ở trạng thái '{newStatus}'.");
+}
         var now = DateTime.UtcNow;
         TripStatus? fromStatus = isInitial ? null : Status;
 
@@ -186,4 +191,35 @@ public class Trip
         Fare.Status = FareStatus.Rejected;
         Fare.RespondedAt = DateTime.UtcNow;
     }
+    internal void RespondToOffer(Guid driverId, OfferStatus response)
+{
+    if (response is not (OfferStatus.Accepted or OfferStatus.Rejected))
+    {
+        throw new InvalidTripStateException(
+            "INVALID_TRIP_STATE: Phản hồi offer không hợp lệ.");
+    }
+
+    // Kiểm tra toàn bộ trước khi thay đổi dữ liệu.
+    var pendingOffers = Offers
+        .Where(x => x.Status == OfferStatus.Pending)
+        .ToList();
+
+    if (driverId == Guid.Empty ||
+        pendingOffers.Count != 1 ||
+        pendingOffers[0].DriverId != driverId)
+    {
+        throw new InvalidTripStateException(
+            "INVALID_TRIP_STATE: Không có offer đang chờ của tài xế này.");
+    }
+
+    var now = DateTime.UtcNow;
+    var offer = pendingOffers[0];
+
+    offer.Status = response;
+    offer.RespondedAt = now;
+    UpdatedAt = now;
+}
+internal void MarkPaymentPending()
+    => CurrentState.MarkPaymentPending(this);
+
 }
