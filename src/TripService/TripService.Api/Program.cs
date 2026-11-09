@@ -69,6 +69,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             code = "FORBIDDEN",
             message = "Bạn không có quyền thực hiện thao tác này."
         });
+    },
+    OnChallenge = async context =>
+    {
+        context.HandleResponse();
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        context.Response.Headers.WWWAuthenticate = "Bearer";
+        var (code, message) = context.AuthenticateFailure switch
+        {
+            SecurityTokenExpiredException => ("TOKEN_EXPIRED", "Phiên đăng nhập đã hết hạn."),
+            not null => ("TOKEN_INVALID", "Token không hợp lệ."),
+            _ => ("UNAUTHORIZED", "Bạn cần đăng nhập để thực hiện thao tác này.")
+        };
+        await context.Response.WriteAsJsonAsync(new { code, message });
     }
 };
     });
@@ -82,7 +95,8 @@ var app = builder.Build();
 
 
 
-await app.Services.MigrateDatabaseAsync();
+if (!app.Environment.IsEnvironment("Testing"))
+    await app.Services.MigrateDatabaseAsync();
 app.UseMiddleware<ExceptionMiddleware>();              // ← thêm, đặt TRƯỚC Swagger và MapControllers
 
 if (app.Environment.IsDevelopment())
@@ -98,3 +112,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }
