@@ -16,6 +16,17 @@ services:
     volumes:
       - sqlserver-data:/var/opt/mssql
 
+  identity-sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: swiftride-identity-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "SwiftRide@123"
+    ports:
+      - "1435:1433"
+    volumes:
+      - identity-sqlserver-data:/var/opt/mssql
+
   postgres:
     image: postgres:16
     container_name: swiftride-postgres
@@ -47,6 +58,7 @@ services:
       - "15672:15672"   # giao diện quản lý: http://localhost:15672
 
 volumes:
+  identity-sqlserver-data:
   sqlserver-data:
   postgres-data:
   mongo-data:

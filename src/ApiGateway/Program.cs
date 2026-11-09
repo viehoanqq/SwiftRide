@@ -14,5 +14,5 @@ var app = builder.Build();
 app.UseCors();
 
 app.MapControllers();     // GET /health
-app.MapReverseProxy();    // /auth/* → Trip Service
+app.MapReverseProxy();    // /auth/* → Identity Service
 app.Run();

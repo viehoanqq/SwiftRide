@@ -43,7 +43,7 @@ public class TripRepositorySqlServerTests
         Assert.NotNull(result.Location);
         Assert.NotNull(result.Fare);
         Assert.NotEmpty(result.History);
-        Assert.NotNull(result.Offers[0].Driver);
+        Assert.NotNull(result.Offers[0].DriverName);
         Assert.Empty(db.ChangeTracker.Entries());
     }
 
@@ -137,7 +137,7 @@ public class TripRepositorySqlServerTests
             try
             {
                 await using var db = database.Context();
-                await db.Database.MigrateAsync();
+                await db.Database.EnsureCreatedAsync(); // Isolated repository schema, without cross-database cutover.
                 return database;
             }
             catch

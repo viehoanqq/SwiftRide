@@ -146,6 +146,7 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
                     driverId,
                     trip.Offers.Count + 1,
                     matchedDriver.DistanceKm);
+                offer.DriverName = matchedDriver.Name;
                 trips.AddOffer(offer);
             }
         }
@@ -271,6 +272,7 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
                     !double.IsFinite(matched.DistanceKm) || matched.DistanceKm < 0)
                     throw new DownstreamException(502, "MATCHING_INVALID_RESPONSE", "Matching trả về tài xế không hợp lệ.");
                 var offer = trip.OfferDriver(nextDriver, trip.Offers.Count + 1, matched.DistanceKm);
+                offer.DriverName = matched.Name;
                 trips.AddOffer(offer);
             }
         }

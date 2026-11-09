@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using PaymentService.Application.DTOs;
 using PaymentService.Application.Exceptions;
+using PaymentService.Domain.Exceptions;
 
 namespace PaymentService.Api.Middleware;
 
@@ -14,6 +15,10 @@ public sealed class ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionM
         catch (AppException ex)
         {
             await WriteAsync(context, ex.StatusCode, ex.Code, ex.Message);
+        }
+        catch (PaymentRuleException ex)
+        {
+            await WriteAsync(context, ex.Code == "VALIDATION_ERROR" ? 400 : 409, ex.Code, ex.Message);
         }
         catch (DbUpdateConcurrencyException)
         {

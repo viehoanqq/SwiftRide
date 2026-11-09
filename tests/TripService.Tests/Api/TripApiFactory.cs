@@ -16,7 +16,6 @@ using TripService.Application.DTOs;
 using TripService.Application.Interfaces;
 using TripService.Domain.Entities;
 using TripService.Domain.Enums;
-using TripService.Infrastructure.Outbox;
 
 namespace TripService.Tests.Api;
 
@@ -51,9 +50,6 @@ public sealed class TripApiFactory : WebApplicationFactory<Program>
         }));
         builder.ConfigureTestServices(services =>
         {
-            foreach (var registration in services.Where(s => s.ServiceType == typeof(IHostedService) &&
-                s.ImplementationType == typeof(DriverRegistrationWorker)).ToList())
-                services.Remove(registration);
             services.RemoveAll<ITripRepository>();
             services.RemoveAll<IMatchingClient>();
             services.RemoveAll<IDriverStatusClient>();
@@ -119,7 +115,7 @@ internal sealed class MemoryTripRepository(TripStore store) : ITripRepository
         foreach (var trip in tracked.Values)
         {
             foreach (var offer in trip.Offers)
-                offer.Driver = new User { Id = offer.DriverId, FullName = "Driver" };
+                offer.DriverName = "Driver";
             for (var i = 0; i < trip.History.Count; i++) trip.History[i].Id = i + 1;
             store.Committed[trip.Id] = TripStore.Copy(trip);
         }

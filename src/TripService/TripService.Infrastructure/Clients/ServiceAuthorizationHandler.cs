@@ -14,8 +14,7 @@ public sealed class ServiceAuthorizationHandler(IConfiguration configuration) : 
     {
         var jwt = configuration.GetSection("Jwt");
         var token = new JwtSecurityToken(jwt["Issuer"], jwt["Audience"],
-            new[] { new Claim("sub", "trip-service"), new Claim("scope", "drivers:register"),
-                new Claim("scope", "drivers:status") },
+            new[] { new Claim("sub", "trip-service"), new Claim("scope", "drivers:status") },
             expires: DateTime.UtcNow.AddMinutes(2),
             signingCredentials: new SigningCredentials(
                 new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["Key"]!)),

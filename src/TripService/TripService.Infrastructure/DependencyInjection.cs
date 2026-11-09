@@ -5,7 +5,6 @@ using TripService.Infrastructure.Persistence;
 
 
 using TripService.Application.Interfaces;          // thêm
-using TripService.Infrastructure.Auth;             // thêm
 using TripService.Infrastructure.Clients;
 using TripService.Infrastructure.Repositories; 
 
@@ -17,9 +16,6 @@ public static class DependencyInjection
     {
         services.AddDbContext<TripDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString("TripDb")));
-        services.AddScoped<IUserRepository, UserRepository>();     // thêm: dùng DbContext nên Scoped
-        services.AddSingleton<IPasswordHasher, PasswordHasher>();  // thêm: không giữ trạng thái nên Singleton   
-        services.AddSingleton<ITokenService, JwtTokenService>();
         services.AddScoped<ITripRepository, TripRepository>();     // thêm: dùng DbContext nên Scoped
 
         services.AddHttpContextAccessor();
@@ -45,12 +41,6 @@ public static class DependencyInjection
             client.Timeout = Timeout.InfiniteTimeSpan;
         }).AddHttpMessageHandler<ServiceAuthorizationHandler>();
 
-        services.AddHttpClient("DriverRegistration", client =>
-        {
-            client.BaseAddress = matchingServiceUri;
-            client.Timeout = TimeSpan.FromSeconds(10);
-        }).AddHttpMessageHandler<ServiceAuthorizationHandler>();
-        services.AddHostedService<TripService.Infrastructure.Outbox.DriverRegistrationWorker>();
         return services;
     }
 

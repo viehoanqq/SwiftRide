@@ -1,5 +1,17 @@
 # Contract Payment – đợt 5
 
+## Cập nhật: ánh xạ kết quả sang Trip
+
+`PaymentResultMapping.Apply(trip, response.Status)` ở Trip.Application đã triển khai:
+SUCCEEDED → MarkPaid(), FAILED → MarkPaymentFailed() qua State pattern. Chỉ PaymentPending
+được chuyển sang kết quả cuối; mỗi lần chuyển thêm đúng một history. Kết quả cuối giống nhau
+gửi lặp không thay đổi history/UpdatedAt; kết quả trái ngược bị chặn. PENDING không hạ trạng thái
+cuối. REFUNDED giữ nguyên Trip Paid; nếu Trip chưa Paid thì từ chối kết quả không nhất quán.
+
+Mapper chưa nối vào dropoff vì PaymentClient/workflow HTTP chưa triển khai. Người tích hợp phải
+xác minh kết quả thuộc đúng Trip, gọi mapper rồi SaveChanges. Không chuyển timeout/HTTP error
+thành kết quả FAILED. Đây là hoàn thiện quy tắc Domain/ánh xạ, không phải hoàn thiện API thu tiền.
+
 Contract được chốt dựa trên entity/schema hiện tại. Đây là chữ ký và quy ước triển khai,
 không phải thông báo các API Payment đã hoạt động.
 
@@ -26,6 +38,36 @@ không phải thông báo các API Payment đã hoạt động.
 - AttemptCount đếm lần xử lý thanh toán thực tế. Replay/GET/refund không tăng bộ đếm.
 
 ## HTTP
+
+### Quy tắc Domain đã triển khai
+
+- `MoneyRules.Split(amount, driverRate)` trả Total/DriverAmount/PlatformAmount. Reject tiền âm, bằng 0,
+  quá numeric(18,2), hoặc có hơn 2 chữ số lẻ; không âm thầm làm tròn số tiền đầu vào.
+- Ví dụ 50.000 → Driver 40.000, Platform 10.000; 10,03 → 8,02 + 2,01.
+  Với số tiền rất nhỏ (0,01), phần Platform có thể là 0 do đơn vị làm tròn.
+- `Payment.CompleteWalletAttempt(balance)` kiểm tra toàn bộ Amount, rồi ghi Succeeded hoặc
+  Failed/INSUFFICIENT_FUNDS. Balance bằng Amount vẫn thành công. Phương thức này chỉ quyết định
+  kết quả, KHÔNG sửa Account hoặc ghi ledger. Application phải khóa Account trước khi gọi và
+  lưu outcome + số dư + ledger cùng transaction.
+- CARD dùng BeginAttempt rồi MarkSucceeded hoặc MarkFailed(CARD_DECLINED) sau kết quả provider.
+  Lỗi timeout không phải failureReason nghiệp vụ: giữ Pending để đối soát.
+- BeginAttempt chỉ một lần trong đợt này; gọi lặp/replay do Application đọc kết quả đã lưu,
+  không gọi Domain lại. Pending có attempt chưa rõ kết quả phải đối soát trước, không thu lại.
+- `MarkRefunded()` chỉ cho Succeeded → Refunded và không tăng AttemptCount. Nó không tự hoàn tiền:
+  workflow refund phải kiểm tra số dư, đảo CHARGE và lưu receipt trong cùng transaction.
+- Entity vẫn giữ setter hiện có để tương thích EF/mã nhóm; code nghiệp vụ phải dùng các method,
+  không gán trực tiếp Status/AttemptCount để bỏ qua kiểm tra.
+
+| Payment Domain / JSON | Trip cần chuyển tới | Ghi chú |
+|---|---|---|
+| Pending / PENDING | PaymentPending | Chưa có kết quả cuối, không coi là Failed |
+| Succeeded / SUCCEEDED | Paid | Chỉ sau khi giao dịch Payment commit thành công |
+| Failed / FAILED | PaymentFailed | Có failureReason nghiệp vụ |
+| Refunded / REFUNDED | Không đổi tự động | Trip chưa có state Refunded; UI đọc trạng thái Payment |
+
+PaymentRuleException được API ánh xạ VALIDATION_ERROR → 400; INVALID_PAYMENT_STATE,
+PAYMENT_ALREADY_ATTEMPTED và REFUND_NOT_ALLOWED → 409. Thiếu tiền được lưu thành Payment FAILED,
+không ném exception HTTP. Unit test quy tắc nằm ở `tests/PaymentService.Tests/PaymentRulesTests.cs`.
 
 | Endpoint | Request | Thành công | Quyền |
 |---|---|---|---|
@@ -113,3 +155,7 @@ Luồng cần triển khai sau contract:
 Chưa thay đổi runtime/auth/schema trong bước chốt contract. Các việc tiếp theo:
 Hoàng triển khai policy + migration/provision ví; Đạt triển khai repository/UoW/client + Trip states;
 Minh triển khai Domain/payment workflow; Phong triển khai query/refund; Hiển nối FE; Mai kiểm thử.
+
+## C?u h?nh t? l? chia ti?n
+
+`Payment:DriverRate` trong appsettings.json l? 0.8 cho ??t 5. PaymentOptions ???c bind v? validate khi kh?i ??ng (b?t bu?c, t? 0 ??n 1). Application inject PaymentOptions v? g?i `MoneyRules.Split(payment.Amount, options.DriverRate)`. Domain kh?ng ??c IConfiguration. Kh?ng c?u h?nh PlatformRate ri?ng: Platform lu?n nh?n ph?n c?n l?i. Thay c?u h?nh c?n kh?i ??ng l?i service. Payment ?? x? l? v? refund d?ng ledger g?c, kh?ng t?nh l?i theo t? l? m?i.

@@ -72,7 +72,7 @@ public class TripDriverWorkflowTests
     {
         var driver = Guid.NewGuid();
         var trip = OfferedTrip(driver);
-        trip.Offers[0].Driver = new User { Id = driver, FullName = "Driver Test" };
+        trip.Offers[0].DriverName = "Driver Test";
         trip.AcceptOffer(driver);
         repository.Setup(r => r.GetActiveByDriverAsync(driver, default)).ReturnsAsync(trip);
 

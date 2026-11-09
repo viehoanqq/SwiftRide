@@ -54,7 +54,7 @@ public class TripGetByIdTests
         var driverId = Guid.NewGuid();
         var trip = CreateTrip(riderId);
         var offer = CreateOffer(trip.Id, driverId, OfferStatus.Accepted);
-        offer.Driver = new User { Id = driverId, FullName = "Driver One" };
+        offer.DriverName = "Driver One";
         trip.Offers.Add(offer);
         _tripRepository.Setup(repository => repository.GetByIdAsync(trip.Id)).ReturnsAsync(trip);
 

@@ -86,6 +86,10 @@ public class Trip
     public void MarkDroppedOff()
         => CurrentState.MarkDroppedOff(this);
 
+    public void MarkPaid() => CurrentState.MarkPaid(this);
+
+    public void MarkPaymentFailed() => CurrentState.MarkPaymentFailed(this);
+
     public void Cancel()
         => CurrentState.Cancel(this);
 

@@ -19,8 +19,8 @@ public abstract class TripState
     TripStatus.Cancelled      => new CancelledState(),
     TripStatus.Failed         => new FailedState(),
 
-    TripStatus.Paid or
-    TripStatus.PaymentFailed => new UnhandledTripState(status),
+    TripStatus.Paid          => new PaidState(),
+    TripStatus.PaymentFailed => new PaymentFailedState(),
 
     _ => throw new InvalidTripStateException(
         $"INVALID_TRIP_STATE: Trạng thái '{status}' không hợp lệ.")
@@ -52,6 +52,10 @@ public abstract class TripState
 
     public virtual void MarkDroppedOff(Trip trip)
         => throw InvalidTransition(nameof(MarkDroppedOff));
+
+    public virtual void MarkPaid(Trip trip) => throw InvalidTransition(nameof(MarkPaid));
+
+    public virtual void MarkPaymentFailed(Trip trip) => throw InvalidTransition(nameof(MarkPaymentFailed));
 
     public virtual void Cancel(Trip trip)
         => throw InvalidTransition(nameof(Cancel));

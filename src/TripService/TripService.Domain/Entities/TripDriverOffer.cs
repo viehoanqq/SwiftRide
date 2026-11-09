@@ -7,7 +7,7 @@ public class TripDriverOffer
     public Guid Id { get; set; }
     public Guid TripId { get; set; }
     public Guid DriverId { get; set; }
-    public User Driver { get; set; } = null!;
+    public string DriverName { get; set; } = string.Empty;
     public int AttemptNo { get; set; }
     public double DistanceToPickupKm { get; set; }
     public OfferStatus Status { get; set; }
