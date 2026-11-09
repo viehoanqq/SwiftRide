@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\TripService\TripService.Api\TripService.Api.csproj" />
     <ProjectReference Include="..\..\src\TripService\TripService.Domain\TripService.Domain.csproj" />
     <ProjectReference Include="..\..\src\TripService\TripService.Application\TripService.Application.csproj" />
     <ProjectReference Include="..\..\src\TripService\TripService.Infrastructure\TripService.Infrastructure.csproj" />

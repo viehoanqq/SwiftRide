@@ -27,23 +27,32 @@ public class TripRepository(TripDbContext db) : ITripRepository
             .OrderByDescending(t => t.CreatedAt)
             .FirstOrDefaultAsync();
 
-    public async Task<IReadOnlyList<Trip>> GetTripsWithPendingOffersForDriverAsync(
+    public async Task<IReadOnlyList<Trip>>
+    GetTripsWithPendingOffersForDriverAsync(
         Guid driverId,
         CancellationToken cancellationToken) =>
-        await WithDetails()
-            .Where(trip => trip.Offers.Any(offer =>
-                offer.DriverId == driverId && offer.Status == OfferStatus.Pending))
-            .OrderByDescending(trip => trip.CreatedAt)
-            .ToListAsync(cancellationToken);
+    await WithDetails()
+        .AsNoTracking()
+        .Where(trip =>
+            trip.Status == TripStatus.DriverOffered &&
+            trip.Offers.Any(offer =>
+                offer.DriverId == driverId &&
+                offer.Status == OfferStatus.Pending))
+        .OrderByDescending(trip => trip.CreatedAt)
+        .ThenBy(trip => trip.Id)
+        .ToListAsync(cancellationToken);
 
-    public Task<Trip?> GetActiveByDriverAsync(Guid driverId, CancellationToken cancellationToken) =>
-        WithDetails()
-            .Where(trip =>
-                !FinishedStatuses.Contains(trip.Status) &&
-                trip.Offers.Any(offer =>
-                    offer.DriverId == driverId && offer.Status == OfferStatus.Accepted))
-            .OrderByDescending(trip => trip.UpdatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
+    public Task<Trip?> GetActiveByDriverAsync(
+    Guid driverId,
+    CancellationToken cancellationToken) =>
+    WithDetails()
+        .Where(trip =>
+            !FinishedStatuses.Contains(trip.Status) &&
+            trip.Offers.Any(offer =>
+                offer.DriverId == driverId &&
+                offer.Status == OfferStatus.Accepted))
+        .OrderByDescending(trip => trip.UpdatedAt)
+        .FirstOrDefaultAsync(cancellationToken);
 
     public Task SaveChangesAsync() =>
         db.SaveChangesAsync();

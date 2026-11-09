@@ -177,22 +177,69 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching) : I
         return trip.ToTripDetailDto();
     }
 
-    public Task<IReadOnlyList<DriverOfferDto>> GetOffersAsync(
+    public async Task<IReadOnlyList<DriverOfferDto>> GetOffersAsync(
         Guid driverId,
         CancellationToken cancellationToken)
-        => throw new NotImplementedException("Driver offer workflow is not implemented yet.");
+    {
+        var pendingTrips = await trips.GetTripsWithPendingOffersForDriverAsync(
+            driverId, cancellationToken);
 
-    public Task<TripDetailDto?> GetCurrentTripAsync(
+        return pendingTrips.SelectMany(trip => trip.Offers
+                .Where(offer => offer.DriverId == driverId && offer.Status == OfferStatus.Pending)
+                .Select(offer => new DriverOfferDto(
+                    offer.Id,
+                    trip.Id,
+                    new LocationDto((double)trip.Location.PickupLat,
+                        (double)trip.Location.PickupLng, trip.Location.PickupAddress),
+                    new LocationDto((double)trip.Location.DropoffLat,
+                        (double)trip.Location.DropoffLng, trip.Location.DropoffAddress),
+                    trip.Fare?.Price ?? throw new InvalidOperationException("Offered trip has no fare."),
+                    offer.DistanceToPickupKm,
+                    new DateTimeOffset(DateTime.SpecifyKind(offer.CreatedAt, DateTimeKind.Utc)))))
+            .OrderByDescending(offer => offer.CreatedAt)
+            .ThenBy(offer => offer.OfferId)
+            .ToList();
+    }
+
+    public async Task<TripDetailDto?> GetCurrentTripAsync(
         Guid driverId,
         CancellationToken cancellationToken)
-        => throw new NotImplementedException("Driver current-trip workflow is not implemented yet.");
+    {
+        var trip = await trips.GetActiveByDriverAsync(driverId, cancellationToken);
+        return trip?.ToTripDetailDto();
+    }
 
-    public Task<TripDriverActionResponse> AcceptOfferAsync(
-        Guid tripId,
-        Guid driverId,
-        CancellationToken cancellationToken)
-        => throw new NotImplementedException("Driver offer acceptance is not implemented yet.");
+    public async Task<TripDriverActionResponse> AcceptOfferAsync(
+    Guid tripId,
+    Guid driverId,
+    CancellationToken cancellationToken)
+{
+    cancellationToken.ThrowIfCancellationRequested();
 
+    var trip = await trips.GetByIdAsync(tripId);
+
+    if (trip is null)
+    {
+        throw new NotFoundException(
+            "TRIP_NOT_FOUND",
+            "Không tìm thấy chuyến đi.");
+    }
+
+    if (!trip.Offers.Any(offer => offer.DriverId == driverId))
+    {
+        throw new ForbiddenException(
+            "FORBIDDEN",
+            "Bạn không được mời nhận chuyến đi này.");
+    }
+
+    // Domain kiểm tra trạng thái Trip, đúng offer Pending,
+    // cập nhật offer và ghi history.
+    trip.AcceptOffer(driverId);
+
+    await trips.SaveChangesAsync();
+
+    return new TripDriverActionResponse(trip.Status.ToString());
+}
     public Task<TripDriverActionResponse> RejectOfferAsync(
         Guid tripId,
         Guid driverId,

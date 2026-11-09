@@ -9,6 +9,26 @@ namespace MatchingService.Infrastructure.Repositories;
 
 public class DriverRepository(MongoContext context) : IDriverRepository
 {
+    public async Task RegisterAsync(string driverId, string name, CancellationToken cancellationToken)
+    {
+        // Insert-only registration: delayed/repeated deliveries must not reset an online driver.
+        var update = Builders<DriverDocument>.Update
+            .SetOnInsert(d => d.Name, name)
+            .SetOnInsert(d => d.Status, DriverStatus.Offline)
+            .SetOnInsert(d => d.UpdatedAt, DateTime.UtcNow);
+        try
+        {
+            await context.Drivers.UpdateOneAsync(d => d.Id == driverId, update,
+                new UpdateOptions { IsUpsert = true }, cancellationToken);
+        }
+        catch (MongoWriteException ex) when (ex.WriteError.Category == ServerErrorCategory.DuplicateKey)
+        {
+            // Another registration/online request inserted the same _id concurrently.
+            if (!await context.Drivers.Find(d => d.Id == driverId).AnyAsync(cancellationToken))
+                throw;
+        }
+    }
+
     public async Task<Driver?> GetByIdAsync(string driverId)
     {
         var doc = await context.Drivers.Find(d => d.Id == driverId).FirstOrDefaultAsync();
@@ -22,7 +42,8 @@ public class DriverRepository(MongoContext context) : IDriverRepository
             Id = driver.Id,
             Name = driver.Name,
             Status = driver.Status,
-            Location = GeoJson.Point(GeoJson.Geographic(driver.Location.Lng, driver.Location.Lat)),
+            Location = driver.Location is null ? null :
+                GeoJson.Point(GeoJson.Geographic(driver.Location.Lng, driver.Location.Lat)),
             UpdatedAt = driver.UpdatedAt
         };
 
@@ -73,7 +94,8 @@ public class DriverRepository(MongoContext context) : IDriverRepository
         Id = doc.Id,
         Name = doc.Name,
         Status = doc.Status,
-        Location = new GeoPoint(doc.Location.Coordinates.Latitude, doc.Location.Coordinates.Longitude),
+        Location = doc.Location is null ? null :
+            new GeoPoint(doc.Location.Coordinates.Latitude, doc.Location.Coordinates.Longitude),
         UpdatedAt = doc.UpdatedAt
     };
 }

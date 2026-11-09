@@ -2,11 +2,25 @@ using MatchingService.Application.DTOs;
 using MatchingService.Application.Exceptions;
 using MatchingService.Application.Interfaces;
 using MatchingService.Domain.Enums;
+using SwiftRide.Contracts.Events;
 
 namespace MatchingService.Application.Services;
 
 public class DriverAppService(IDriverRepository driverRepository)
 {
+    public async Task RegisterAsync(Guid driverId, DriverRegistered request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || driverId == Guid.Empty || driverId != request.DriverId ||
+            string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 100)
+        {
+            throw new ValidationException("DriverId hoặc tên tài xế không hợp lệ.");
+        }
+
+        await driverRepository.RegisterAsync(
+            driverId.ToString("D"), request.Name.Trim(), cancellationToken);
+    }
+
     public async Task<DriverDto> UpdateStatusAsync(string driverId, UpdateDriverStatusRequest request)
     {
         if (string.IsNullOrWhiteSpace(driverId))

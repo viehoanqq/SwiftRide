@@ -24,7 +24,7 @@ public class MatchAppService(IDriverRepository driverRepository)
         var pickup = new GeoPoint(request.PickupLat, request.PickupLng);
         var driver = await driverRepository.FindNearestAvailableAsync(pickup, radius, excluded);
 
-        if (driver is null)
+        if (driver?.Location is null)
         {
             throw new NotFoundException("NO_DRIVER_AVAILABLE", "Không tìm thấy tài xế phù hợp quanh khu vực đón");
         }

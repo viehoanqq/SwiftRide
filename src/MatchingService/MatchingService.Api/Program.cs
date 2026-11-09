@@ -93,7 +93,13 @@ builder.Services.AddSingleton<PromoPricing>();
 builder.Services.AddSingleton<
     IPricingStrategySelector, PricingStrategySelector>();
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("DriverRegistration", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireClaim("sub", "trip-service")
+        .RequireClaim("scope", "drivers:register"));
+});
 
 var app = builder.Build();
 

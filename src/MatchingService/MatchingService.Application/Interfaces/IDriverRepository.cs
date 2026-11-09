@@ -5,6 +5,7 @@ namespace MatchingService.Application.Interfaces;
 
 public interface IDriverRepository
 {
+    Task RegisterAsync(string driverId, string name, CancellationToken cancellationToken);
     // Phong – GET /availability/me
     Task<Driver?> GetByIdAsync(string driverId);
 

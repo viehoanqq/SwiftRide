@@ -37,6 +37,12 @@ public static class DependencyInjection
             client.Timeout = Timeout.InfiniteTimeSpan;
         });
 
+        services.AddHttpClient("DriverRegistration", client =>
+        {
+            client.BaseAddress = matchingServiceUri;
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+        services.AddHostedService<TripService.Infrastructure.Outbox.DriverRegistrationWorker>();
         return services;
     }
 

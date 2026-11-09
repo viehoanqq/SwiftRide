@@ -56,6 +56,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             NameClaimType = "name",
             RoleClaimType = "role"                   // để sau này [Authorize(Roles = "Driver")] đọc đúng
         };
+        options.Events = new JwtBearerEvents
+{
+    OnForbidden = async context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+
+        await context.Response.WriteAsJsonAsync(new
+        {
+            code = "FORBIDDEN",
+            message = "Bạn không có quyền thực hiện thao tác này."
+        });
+    }
+};
     });
 builder.Services.AddAuthorization();
 

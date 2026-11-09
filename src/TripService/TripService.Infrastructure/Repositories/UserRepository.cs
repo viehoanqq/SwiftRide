@@ -2,6 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using TripService.Application.Interfaces;
 using TripService.Domain.Entities;
 using TripService.Infrastructure.Persistence;
+using TripService.Infrastructure.Outbox;
+using SwiftRide.Contracts.Events;
+using System.Text.Json;
 
 namespace TripService.Infrastructure.Repositories;
 
@@ -15,6 +18,17 @@ public class UserRepository(TripDbContext db) : IUserRepository
     public async Task AddAsync(User user)
     {
         db.Users.Add(user);
+        if (user.RoleId == Role.DriverId)
+        {
+            db.OutboxMessages.Add(new OutboxMessage
+            {
+                Id = Guid.NewGuid(),
+                Type = nameof(DriverRegistered),
+                Payload = JsonSerializer.Serialize(new DriverRegistered(user.Id, user.FullName)),
+                CorrelationId = user.Id,
+                OccurredAt = DateTime.UtcNow
+            });
+        }
         await db.SaveChangesAsync();          // chỉ tầng Infrastructure mới gọi SaveChanges
     }
 
