@@ -23,6 +23,8 @@ public static class DependencyInjection
         services.AddScoped<ITripRepository, TripRepository>();     // thêm: dùng DbContext nên Scoped
 
         services.AddHttpContextAccessor();
+        services.AddTransient<ForwardRequestHeadersHandler>();
+        services.AddTransient<ServiceAuthorizationHandler>();
         var matchingServiceUrl = configuration["Services:MatchingService"];
         if (!Uri.TryCreate(matchingServiceUrl, UriKind.Absolute, out var matchingServiceUri) ||
             (matchingServiceUri.Scheme != Uri.UriSchemeHttp && matchingServiceUri.Scheme != Uri.UriSchemeHttps))
@@ -35,13 +37,19 @@ public static class DependencyInjection
         {
             client.BaseAddress = matchingServiceUri;
             client.Timeout = Timeout.InfiniteTimeSpan;
-        });
+        }).AddHttpMessageHandler<ForwardRequestHeadersHandler>();
+
+        services.AddHttpClient<IDriverStatusClient, DriverStatusClient>(client =>
+        {
+            client.BaseAddress = matchingServiceUri;
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        }).AddHttpMessageHandler<ServiceAuthorizationHandler>();
 
         services.AddHttpClient("DriverRegistration", client =>
         {
             client.BaseAddress = matchingServiceUri;
             client.Timeout = TimeSpan.FromSeconds(10);
-        });
+        }).AddHttpMessageHandler<ServiceAuthorizationHandler>();
         services.AddHostedService<TripService.Infrastructure.Outbox.DriverRegistrationWorker>();
         return services;
     }

@@ -1,5 +1,8 @@
 namespace TripService.Application.Exceptions;
 
+public class DownstreamException(int statusCode, string code, string message)
+    : AppException(statusCode, code, message);
+
 public abstract class AppException(int statusCode, string code, string message) : Exception(message)
 {
     public int StatusCode { get; } = statusCode;

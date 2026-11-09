@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Moq;
 using Moq.Protected;
 using TripService.Application.DTOs;
+using TripService.Application.Exceptions;
 using TripService.Infrastructure.Clients;
 
 namespace TripService.Tests.Clients;
@@ -33,7 +34,7 @@ public class MatchingClientTests
                 Content = JsonContent.Create(expectedQuote)
             });
 
-        var httpClient = new HttpClient(handlerMock.Object)
+        var httpClient = new HttpClient(new ForwardRequestHeadersHandler(_mockHttpContextAccessor.Object) { InnerHandler = handlerMock.Object })
         {
             BaseAddress = new Uri("http://localhost:5002")
         };
@@ -66,10 +67,11 @@ public class MatchingClientTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage
             {
-                StatusCode = HttpStatusCode.NotFound
+                StatusCode = HttpStatusCode.NotFound,
+                Content = JsonContent.Create(new { code = "NO_DRIVER_AVAILABLE" })
             });
 
-        var httpClient = new HttpClient(handlerMock.Object)
+        var httpClient = new HttpClient(new ForwardRequestHeadersHandler(_mockHttpContextAccessor.Object) { InnerHandler = handlerMock.Object })
         {
             BaseAddress = new Uri("http://localhost:5002")
         };
@@ -110,7 +112,7 @@ public class MatchingClientTests
                 Content = JsonContent.Create(expectedQuote)
             });
 
-        var httpClient = new HttpClient(handlerMock.Object)
+        var httpClient = new HttpClient(new ForwardRequestHeadersHandler(_mockHttpContextAccessor.Object) { InnerHandler = handlerMock.Object })
         {
             BaseAddress = new Uri("http://localhost:5002")
         };
@@ -128,7 +130,7 @@ public class MatchingClientTests
     }
 
     [Fact]
-    public async Task GetQuoteAsync_ShouldRetryAndSucceed_WhenTransient500Occurs()
+    public async Task GetQuoteAsync_ShouldNotRetry_WhenTransient500Occurs()
     {
         // Arrange
         var tripId = Guid.NewGuid();
@@ -158,7 +160,7 @@ public class MatchingClientTests
                 });
             });
 
-        var httpClient = new HttpClient(handlerMock.Object)
+        var httpClient = new HttpClient(new ForwardRequestHeadersHandler(_mockHttpContextAccessor.Object) { InnerHandler = handlerMock.Object })
         {
             BaseAddress = new Uri("http://localhost:5002")
         };
@@ -166,12 +168,8 @@ public class MatchingClientTests
         var client = new MatchingClient(httpClient, _mockHttpContextAccessor.Object);
 
         // Act
-        var result = await client.GetQuoteAsync(tripId, pickup, dropoff);
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Equal(2, attempts);
-        Assert.Equal("quote-retry", result.QuoteId);
+        await Assert.ThrowsAsync<DownstreamException>(() => client.GetQuoteAsync(tripId, pickup, dropoff));
+        Assert.Equal(1, attempts);
     }
 
     [Fact]
@@ -190,7 +188,7 @@ public class MatchingClientTests
                 ItExpr.IsAny<CancellationToken>())
             .Returns(() => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)));
 
-        var httpClient = new HttpClient(handlerMock.Object)
+        var httpClient = new HttpClient(new ForwardRequestHeadersHandler(_mockHttpContextAccessor.Object) { InnerHandler = handlerMock.Object })
         {
             BaseAddress = new Uri("http://localhost:5002")
         };
@@ -198,7 +196,7 @@ public class MatchingClientTests
         var client = new MatchingClient(httpClient, _mockHttpContextAccessor.Object);
 
         // Act & Assert
-        await Assert.ThrowsAnyAsync<HttpRequestException>(() => client.GetQuoteAsync(tripId, pickup, dropoff));
+        await Assert.ThrowsAnyAsync<DownstreamException>(() => client.GetQuoteAsync(tripId, pickup, dropoff));
     }
 
     [Fact]
@@ -217,13 +215,13 @@ public class MatchingClientTests
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest));
             });
 
-        var httpClient = new HttpClient(handlerMock.Object)
+        var httpClient = new HttpClient(new ForwardRequestHeadersHandler(_mockHttpContextAccessor.Object) { InnerHandler = handlerMock.Object })
         {
             BaseAddress = new Uri("http://localhost:5002")
         };
         var client = new MatchingClient(httpClient, _mockHttpContextAccessor.Object);
 
-        await Assert.ThrowsAsync<HttpRequestException>(() =>
+        await Assert.ThrowsAsync<DownstreamException>(() =>
             client.GetQuoteAsync(Guid.NewGuid(), new GeoPointDto(10, 10), new GeoPointDto(11, 11)));
 
         Assert.Equal(1, attempts);
@@ -240,13 +238,13 @@ public class MatchingClientTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK));
 
-        var httpClient = new HttpClient(handlerMock.Object)
+        var httpClient = new HttpClient(new ForwardRequestHeadersHandler(_mockHttpContextAccessor.Object) { InnerHandler = handlerMock.Object })
         {
             BaseAddress = new Uri("http://localhost:5002")
         };
         var client = new MatchingClient(httpClient, _mockHttpContextAccessor.Object);
 
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
+        await Assert.ThrowsAsync<DownstreamException>(() =>
             client.GetQuoteAsync(Guid.NewGuid(), new GeoPointDto(10, 10), new GeoPointDto(11, 11)));
     }
 
@@ -274,7 +272,7 @@ public class MatchingClientTests
                 Content = JsonContent.Create(expectedDriver)
             });
 
-        var httpClient = new HttpClient(handlerMock.Object)
+        var httpClient = new HttpClient(new ForwardRequestHeadersHandler(_mockHttpContextAccessor.Object) { InnerHandler = handlerMock.Object })
         {
             BaseAddress = new Uri("http://localhost:5002")
         };
@@ -297,9 +295,9 @@ public class MatchingClientTests
                 "SendAsync",
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.NotFound));
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.NotFound) { Content = JsonContent.Create(new { code = "NO_DRIVER_AVAILABLE" }) });
 
-        var httpClient = new HttpClient(handlerMock.Object)
+        var httpClient = new HttpClient(new ForwardRequestHeadersHandler(_mockHttpContextAccessor.Object) { InnerHandler = handlerMock.Object })
         {
             BaseAddress = new Uri("http://localhost:5002")
         };

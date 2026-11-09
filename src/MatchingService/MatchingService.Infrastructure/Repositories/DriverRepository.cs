@@ -47,10 +47,14 @@ public class DriverRepository(MongoContext context) : IDriverRepository
             UpdatedAt = driver.UpdatedAt
         };
 
-        await context.Drivers.ReplaceOneAsync(
+        await context.Drivers.UpdateOneAsync(
             d => d.Id == driver.Id,
-            doc,
-            new ReplaceOptions { IsUpsert = true });
+            Builders<DriverDocument>.Update
+                .Set(d => d.Name, doc.Name)
+                .Set(d => d.Status, doc.Status)
+                .Set(d => d.Location, doc.Location)
+                .Set(d => d.UpdatedAt, doc.UpdatedAt),
+            new UpdateOptions { IsUpsert = true });
     }
 
     public async Task<bool> SetStatusAsync(string driverId, DriverStatus status)

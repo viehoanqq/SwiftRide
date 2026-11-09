@@ -23,14 +23,16 @@ public class DriverAppService(IDriverRepository driverRepository)
 
     public async Task<DriverDto> UpdateStatusAsync(string driverId, UpdateDriverStatusRequest request)
     {
-        if (string.IsNullOrWhiteSpace(driverId))
+        if (!Guid.TryParse(driverId, out var parsedId) || parsedId == Guid.Empty)
         {
             throw new ValidationException("Driver ID không được để trống");
         }
 
+        driverId = parsedId.ToString("D");
         if (string.IsNullOrWhiteSpace(request?.Status) ||
             !Enum.TryParse<DriverStatus>(request.Status, ignoreCase: true, out var parsedStatus) ||
-            !Enum.IsDefined(parsedStatus))
+            parsedStatus is not (DriverStatus.Busy or DriverStatus.Available) ||
+            !string.Equals(request.Status, parsedStatus.ToString(), StringComparison.OrdinalIgnoreCase))
         {
             throw new ValidationException($"Trạng thái '{request?.Status}' không hợp lệ. Các trạng thái hợp lệ: {string.Join(", ", Enum.GetNames<DriverStatus>())}");
         }

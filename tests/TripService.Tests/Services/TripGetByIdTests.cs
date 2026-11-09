@@ -15,7 +15,7 @@ public class TripGetByIdTests
 
     public TripGetByIdTests()
     {
-        _service = new TripAppService(_tripRepository.Object, Mock.Of<IMatchingClient>());
+        _service = new TripAppService(_tripRepository.Object, Mock.Of<IMatchingClient>(), Mock.Of<IDriverStatusClient>());
     }
 
     [Fact]

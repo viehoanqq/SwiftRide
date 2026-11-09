@@ -1,119 +1,74 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using TripService.Application.DTOs;
+using TripService.Application.Exceptions;
 using TripService.Application.Interfaces;
 
 namespace TripService.Infrastructure.Clients;
 
-public class MatchingClient(HttpClient httpClient, IHttpContextAccessor httpContextAccessor) : IMatchingClient
+public class MatchingClient(HttpClient httpClient, IHttpContextAccessor contextAccessor) : IMatchingClient
 {
-    private static readonly TimeSpan TotalTimeout = TimeSpan.FromSeconds(3);
-    private static readonly TimeSpan AttemptTimeout = TimeSpan.FromSeconds(1);
-
     public Task<QuoteResult?> GetQuoteAsync(Guid tripId, GeoPointDto pickup, GeoPointDto dropoff) =>
-        PostJsonAsync<QuoteResult>("/quote", new { tripId, pickup, dropoff });
+        // Quote writes data: do not retry without an idempotency key.
+        PostAsync<QuoteResult>("/quote", new { tripId, pickup, dropoff }, 1);
 
     public Task<MatchDriverResult?> MatchAsync(MatchDriverRequest request) =>
-        PostJsonAsync<MatchDriverResult>("/match", request);
+        PostAsync<MatchDriverResult>("/match", request, 3);
 
-    private async Task<TResponse?> PostJsonAsync<TResponse>(string path, object payload)
+    private async Task<T?> PostAsync<T>(string path, object payload, int attempts)
     {
-        const int maxAttempts = 3;
-        using var totalTimeout = new CancellationTokenSource(TotalTimeout);
-
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        var caller = contextAccessor.HttpContext?.RequestAborted ?? CancellationToken.None;
+        using var total = CancellationTokenSource.CreateLinkedTokenSource(caller);
+        total.CancelAfter(TimeSpan.FromSeconds(3));
+        try
         {
-            using var attemptTimeout = CancellationTokenSource.CreateLinkedTokenSource(totalTimeout.Token);
-            attemptTimeout.CancelAfter(AttemptTimeout);
-            using var request = CreateRequest(path, payload);
-
-            HttpResponseMessage response;
-            try
+            for (var attempt = 1; attempt <= attempts; attempt++)
             {
-                response = await httpClient.SendAsync(
-                    request,
-                    HttpCompletionOption.ResponseHeadersRead,
-                    attemptTimeout.Token);
-            }
-            catch (HttpRequestException) when (attempt < maxAttempts && !totalTimeout.IsCancellationRequested)
-            {
-                await DelayBeforeRetryAsync(attempt, totalTimeout.Token);
-                continue;
-            }
-            catch (OperationCanceledException) when (attempt < maxAttempts && !totalTimeout.IsCancellationRequested)
-            {
-                await DelayBeforeRetryAsync(attempt, totalTimeout.Token);
-                continue;
-            }
-
-            using (response)
-            {
-                if (response.StatusCode == HttpStatusCode.NotFound)
-                {
-                    return default;
-                }
-
-                if ((int)response.StatusCode >= 500 && attempt < maxAttempts)
-                {
-                    await DelayBeforeRetryAsync(attempt, totalTimeout.Token);
-                    continue;
-                }
-
-                response.EnsureSuccessStatusCode();
-
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(total.Token);
+                timeout.CancelAfter(TimeSpan.FromSeconds(attempts == 1 ? 3 : 1));
                 try
                 {
-                    var result = await response.Content.ReadFromJsonAsync<TResponse>(
-                        cancellationToken: attemptTimeout.Token);
-                    return result ?? throw new InvalidDataException(
-                        $"Matching service trả về response rỗng cho {path} thành công.");
+                    using var request = new HttpRequestMessage(HttpMethod.Post, path)
+                    {
+                        Content = JsonContent.Create(payload)
+                    };
+                    using var response = await httpClient.SendAsync(request,
+                        HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+                    if (response.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        var error = await response.Content.ReadFromJsonAsync<MatchingError>(cancellationToken: timeout.Token);
+                        if (error?.Code == "NO_DRIVER_AVAILABLE") return default;
+                    }
+                    if ((int)response.StatusCode >= 500 && attempt < attempts)
+                    {
+                        await Task.Delay(100 * attempt, total.Token);
+                        continue;
+                    }
+                    if (!response.IsSuccessStatusCode)
+                        throw new DownstreamException(502, "MATCHING_REQUEST_FAILED",
+                            $"Matching trả về HTTP {(int)response.StatusCode} cho {path}.");
+
+                    return await response.Content.ReadFromJsonAsync<T>(cancellationToken: timeout.Token)
+                        ?? throw new DownstreamException(502, "MATCHING_INVALID_RESPONSE", "Matching trả về dữ liệu rỗng.");
                 }
-                catch (OperationCanceledException) when (attempt < maxAttempts && !totalTimeout.IsCancellationRequested)
-                {
-                    await DelayBeforeRetryAsync(attempt, totalTimeout.Token);
-                }
-                catch (JsonException ex)
-                {
-                    throw new InvalidDataException(
-                        $"Matching service trả về JSON không hợp lệ cho {path}.", ex);
-                }
+                catch (HttpRequestException) when (attempt < attempts && !total.IsCancellationRequested)
+                { await Task.Delay(100 * attempt, total.Token); }
+                catch (OperationCanceledException) when (attempt < attempts && !total.IsCancellationRequested)
+                { await Task.Delay(100 * attempt, total.Token); }
             }
+            throw new DownstreamException(502, "MATCHING_UNAVAILABLE", "Không thể gọi Matching.");
         }
-
-        throw new HttpRequestException($"Matching service không phản hồi {path} sau khi thử lại.");
+        catch (OperationCanceledException) when (!caller.IsCancellationRequested)
+        { throw new DownstreamException(504, "MATCHING_TIMEOUT", "Matching không phản hồi trong thời gian cho phép."); }
+        catch (HttpRequestException)
+        { throw new DownstreamException(502, "MATCHING_UNAVAILABLE", "Không thể kết nối Matching."); }
+        catch (JsonException)
+        { throw new DownstreamException(502, "MATCHING_INVALID_RESPONSE", "Matching trả về JSON không hợp lệ."); }
+        catch (NotSupportedException)
+        { throw new DownstreamException(502, "MATCHING_INVALID_RESPONSE", "Định dạng phản hồi Matching không hợp lệ."); }
     }
 
-    private static Task DelayBeforeRetryAsync(int attempt, CancellationToken cancellationToken) =>
-        Task.Delay(TimeSpan.FromMilliseconds(200 * attempt), cancellationToken);
-
-    private HttpRequestMessage CreateRequest(string path, object payload)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post, path)
-        {
-            Content = JsonContent.Create(payload)
-        };
-
-        ForwardAuthorizationHeader(request);
-        return request;
-    }
-
-    private void ForwardAuthorizationHeader(HttpRequestMessage request)
-    {
-        var authorization = httpContextAccessor.HttpContext?.Request.Headers.Authorization.ToString();
-        if (string.IsNullOrWhiteSpace(authorization))
-        {
-            return;
-        }
-
-        if (AuthenticationHeaderValue.TryParse(authorization, out var parsedAuthorization))
-        {
-            request.Headers.Authorization = parsedAuthorization;
-            return;
-        }
-
-        request.Headers.TryAddWithoutValidation("Authorization", authorization);
-    }
+    private sealed record MatchingError(string Code);
 }

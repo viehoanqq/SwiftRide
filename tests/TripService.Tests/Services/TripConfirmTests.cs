@@ -17,7 +17,7 @@ public class TripConfirmTests
 
     public TripConfirmTests()
     {
-        _service = new TripAppService(_mockTripRepo.Object, _mockMatchingClient.Object);
+        _service = new TripAppService(_mockTripRepo.Object, _mockMatchingClient.Object, Mock.Of<IDriverStatusClient>());
         _mockMatchingClient
             .Setup(client => client.MatchAsync(It.IsAny<MatchDriverRequest>()))
             .ReturnsAsync(new MatchDriverResult(

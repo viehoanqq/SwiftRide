@@ -19,6 +19,8 @@ builder.Services.AddScoped<ITripDriverWorkflow>(serviceProvider =>
     serviceProvider.GetRequiredService<TripAppService>());
 builder.Services.Configure<TripWorkflowOptions>(
     builder.Configuration.GetSection(TripWorkflowOptions.SectionName));
+builder.Services.AddSingleton(sp => sp.GetRequiredService<
+    Microsoft.Extensions.Options.IOptions<TripWorkflowOptions>>().Value);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();

@@ -99,6 +99,10 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .RequireClaim("sub", "trip-service")
         .RequireClaim("scope", "drivers:register"));
+    options.AddPolicy("DriverStatusSync", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireClaim("sub", "trip-service")
+        .RequireClaim("scope", "drivers:status"));
 });
 
 var app = builder.Build();
