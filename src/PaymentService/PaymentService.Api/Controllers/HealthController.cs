@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using PaymentService.Infrastructure.Persistence;
 
 namespace PaymentService.Api.Controllers;
 
 [ApiController]
+[AllowAnonymous]
 [Route("health")]
 public class HealthController(PayDbContext  db) : ControllerBase
 {

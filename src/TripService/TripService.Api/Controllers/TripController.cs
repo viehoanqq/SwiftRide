@@ -5,6 +5,7 @@ using TripService.Application.DTOs;
 using TripService.Application.Services;
 using TripService.Application.Interfaces;
 using TripService.Domain.Enums;
+using TripService.Application.Exceptions;
 namespace TripService.Api.Controllers;
 
 [ApiController]
@@ -12,9 +13,15 @@ namespace TripService.Api.Controllers;
 [Authorize]
 public class TripsController(TripAppService tripService, ITripDriverWorkflow tripWorkflow) : ControllerBase
 {
-    private Guid UserId => Guid.Parse(User.FindFirstValue("sub")!);
+    private Guid UserId => Guid.TryParse(User.FindFirstValue("sub"), out var id) && id != Guid.Empty
+        ? id : throw new UnauthorizedException("INVALID_TOKEN_SUBJECT", "Token kh?ng c? ID ng??i d?ng h?p l?.");
 
     [HttpPost]
+    [ProducesResponseType(typeof(CreateTripResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
     [Authorize(Roles = "Rider")]
     public async Task<ActionResult<CreateTripResponse>> Create(CreateTripRequest request)
     {
@@ -23,6 +30,8 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     }
 
     [HttpGet("me/current")]
+    [ProducesResponseType(typeof(TripDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     [Authorize(Roles = "Rider")]
     public async Task<ActionResult<TripDetailDto>> GetCurrent()
     {
@@ -31,6 +40,12 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     }
 
     [HttpPost("{id:guid}/confirm")]
+    [ProducesResponseType(typeof(ConfirmTripResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
     [Authorize(Roles = "Rider")]
     public async Task<IActionResult> Confirm(Guid id, [FromBody] ConfirmTripRequest request, CancellationToken cancellationToken)
     {
@@ -61,6 +76,11 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     }
 
     [HttpPost("{id:guid}/driver-accept")]
+    [ProducesResponseType(typeof(TripDriverActionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
     [Authorize(Roles = "Driver")]
     public async Task<ActionResult<TripDriverActionResponse>> AcceptOffer(Guid id, CancellationToken cancellationToken)
     {
@@ -69,6 +89,11 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     }
 
     [HttpPost("{id:guid}/driver-reject")]
+    [ProducesResponseType(typeof(TripDriverActionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
     [Authorize(Roles = "Driver")]
     public async Task<ActionResult<TripDriverActionResponse>> RejectOffer(Guid id, CancellationToken cancellationToken)
     {
@@ -77,6 +102,9 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     }
 
     [HttpPost("{id:guid}/en-route")]
+    [ProducesResponseType(typeof(TripDriverActionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [Authorize(Roles = "Driver")]
     public async Task<ActionResult<TripDriverActionResponse>> MarkEnRoute(Guid id, CancellationToken cancellationToken)
     {
@@ -85,6 +113,9 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     }
 
     [HttpPost("{id:guid}/pickup")]
+    [ProducesResponseType(typeof(TripDriverActionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [Authorize(Roles = "Driver")]
     public async Task<ActionResult<TripDriverActionResponse>> MarkPickedUp(Guid id, CancellationToken cancellationToken)
     {
@@ -93,6 +124,11 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     }
 
     [HttpPost("{id:guid}/dropoff")]
+    [ProducesResponseType(typeof(TripDriverActionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
     [Authorize(Roles = "Driver")]
     public async Task<ActionResult<TripDriverActionResponse>> MarkDroppedOff(Guid id, CancellationToken cancellationToken)
     {

@@ -5,8 +5,8 @@ namespace ApiGateway.Controllers;
 [Route("health")]
 public class HealthController(IHttpClientFactory httpClientFactory, IConfiguration config) : ControllerBase
 {
-    // GET /health – gọi song song /health của 3 service rồi gom kết quả (API Gateway aggregation).
-    // 200 nếu cả 3 Healthy, 503 nếu có service lỗi DB hoặc không gọi được.
+    // GET /health: aggregate every service configured in Services, including Identity.
+    // Return 503 when any configured service is unhealthy or unreachable.
     [HttpGet]
     public async Task<IActionResult> Get()
     {

@@ -1,0 +1,12 @@
+using IdentityService.Application.Interfaces;
+
+namespace IdentityService.Infrastructure.Auth;
+
+public class PasswordHasher : IPasswordHasher
+{
+    // BCrypt tự sinh salt và gắn vào chuỗi hash → không cần cột salt riêng
+    public string Hash(string password) => BCrypt.Net.BCrypt.HashPassword(password, workFactor: 11);
+
+    public bool Verify(string password, string hashedPassword) =>
+        BCrypt.Net.BCrypt.Verify(password, hashedPassword);
+}

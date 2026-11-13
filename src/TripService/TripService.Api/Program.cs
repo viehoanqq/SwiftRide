@@ -13,12 +13,13 @@ using Microsoft.OpenApi;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddScoped<AuthAppService>();          // ← thêm
 builder.Services.AddScoped<TripAppService>();
 builder.Services.AddScoped<ITripDriverWorkflow>(serviceProvider =>
     serviceProvider.GetRequiredService<TripAppService>());
 builder.Services.Configure<TripWorkflowOptions>(
     builder.Configuration.GetSection(TripWorkflowOptions.SectionName));
+builder.Services.AddSingleton(sp => sp.GetRequiredService<
+    Microsoft.Extensions.Options.IOptions<TripWorkflowOptions>>().Value);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -56,6 +57,32 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             NameClaimType = "name",
             RoleClaimType = "role"                   // để sau này [Authorize(Roles = "Driver")] đọc đúng
         };
+        options.Events = new JwtBearerEvents
+{
+    OnForbidden = async context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+
+        await context.Response.WriteAsJsonAsync(new
+        {
+            code = "FORBIDDEN",
+            message = "Bạn không có quyền thực hiện thao tác này."
+        });
+    },
+    OnChallenge = async context =>
+    {
+        context.HandleResponse();
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        context.Response.Headers.WWWAuthenticate = "Bearer";
+        var (code, message) = context.AuthenticateFailure switch
+        {
+            SecurityTokenExpiredException => ("TOKEN_EXPIRED", "Phiên đăng nhập đã hết hạn."),
+            not null => ("TOKEN_INVALID", "Token không hợp lệ."),
+            _ => ("UNAUTHORIZED", "Bạn cần đăng nhập để thực hiện thao tác này.")
+        };
+        await context.Response.WriteAsJsonAsync(new { code, message });
+    }
+};
     });
 builder.Services.AddAuthorization();
 
@@ -67,7 +94,8 @@ var app = builder.Build();
 
 
 
-await app.Services.MigrateDatabaseAsync();
+if (!app.Environment.IsEnvironment("Testing"))
+    await app.Services.MigrateDatabaseAsync();
 app.UseMiddleware<ExceptionMiddleware>();              // ← thêm, đặt TRƯỚC Swagger và MapControllers
 
 if (app.Environment.IsDevelopment())
@@ -83,3 +111,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }

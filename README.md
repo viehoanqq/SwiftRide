@@ -2,12 +2,13 @@
 
 Hệ thống đặt xe theo kiến trúc **Microservices**, bài tập lớn môn **Kiến trúc Phần mềm**, Trường Đại học Sài Gòn (HK I, 2026–2027).
 
-Gồm 3 microservice, mỗi service có cơ sở dữ liệu riêng (database-per-service, polyglot persistence), đi qua một API Gateway:
+Gồm 4 microservice, mỗi service có database và container database riêng, đi qua một API Gateway:
 
 | Service | Trách nhiệm | Database | Cổng |
 |---|---|---|---|
 | **API Gateway** | Điểm vào duy nhất cho client, gom dữ liệu từ các service | — | 5000 |
-| **Trip Service** | Vòng đời chuyến đi (state machine), tài khoản người dùng | SQL Server | 5001 |
+| **Identity Service** | Đăng ký, đăng nhập, quản lý user | SQL Server (UserDb, cổng 1435) | 5004 |
+| **Trip Service** | Vòng đời chuyến đi (state machine) | SQL Server (TripDb, cổng 1434) | 5001 |
 | **Matching & Pricing Service** | Tìm tài xế gần nhất (geo-query), tính giá | MongoDB | 5002 |
 | **Payment Service** | Thanh toán, sổ cái double-entry, hoàn tiền | PostgreSQL | 5003 |
 
@@ -15,7 +16,8 @@ Gồm 3 microservice, mỗi service có cơ sở dữ liệu riêng (database-pe
 Rider / Driver (React)
         │
         ▼
-  API Gateway :5000 ──────────────┬───────────────────┐
+  API Gateway :5000 ── /auth/* → Identity :5004 → UserDb (SQL Server :1435)
+        ├─────────────────────────┬───────────────────┐
         │                         │                   │
         ▼                         ▼                   ▼
   Trip Service :5001    Matching Service :5002   Payment Service :5003
@@ -57,27 +59,29 @@ Rider / Driver (React)
 
 ```powershell
 docker compose up -d
-docker ps          # 4 container swiftride-* phải ở trạng thái Up
+docker ps          # 5 container swiftride-* phải ở trạng thái Up
 ```
 
 ### 2. Chạy các service (mỗi lệnh một terminal)
 
 ```powershell
+dotnet run --project src/IdentityService/IdentityService.Api
 dotnet run --project src/TripService/TripService.Api
 dotnet run --project src/MatchingService/MatchingService.Api
 dotnet run --project src/PaymentService/PaymentService.Api
 dotnet run --project src/ApiGateway
 ```
 
-Không cần chạy lệnh tạo database. Khi khởi động, mỗi service tự chuẩn bị DB của mình:
-- **Trip, Payment:** tự áp dụng EF Core migration (tạo bảng + dữ liệu mẫu).
+Máy mới hoặc máy còn Auth trong Trip: dừng các API, chạy `powershell -File scripts/split-identity.ps1` sau khi Docker sẵn sàng, trước khi chạy các service. Máy đã tách UserDb nhưng còn ở cổng 1434: chỉ chạy `powershell -File scripts/move-userdb-container.ps1` khi Identity đã dừng.
+- **Identity, Trip, Payment:** tự áp dụng các migration tiếp theo khi khởi động.
 - **Matching:** tự tạo index và seed 5 tài xế nếu collection còn trống.
 
 ### 3. Kiểm tra
 
 | Địa chỉ | Nội dung |
 |---|---|
-| http://localhost:5000/health | Trạng thái database của cả 3 service (qua Gateway) |
+| http://localhost:5000/health | Trạng thái database của cả 4 service (qua Gateway) |
+| http://localhost:5004/swagger | Swagger – Identity Service (Auth/User) |
 | http://localhost:5001/swagger | Swagger – Trip Service |
 | http://localhost:5002/swagger | Swagger – Matching Service |
 | http://localhost:5003/swagger | Swagger – Payment Service |
@@ -89,6 +93,7 @@ Kết quả mong đợi của `/health`:
 {
   "status": "Healthy",
   "services": [
+    { "service": "identity-service", "database": "SQL Server", "status": "Healthy" },
     { "service": "matching-service", "database": "MongoDB",    "status": "Healthy" },
     { "service": "payment-service",  "database": "PostgreSQL", "status": "Healthy" },
     { "service": "trip-service",     "database": "SQL Server", "status": "Healthy" }
@@ -128,6 +133,7 @@ SwiftRide/
 │  ├─ ApiGateway/                   # Điểm vào, gom /health
 │  ├─ BuildingBlocks/
 │  │  └─ SwiftRide.Contracts/       # Sự kiện dùng chung (đợt 6)
+│  ├─ IdentityService/              # Auth/User, SQL Server riêng
 │  ├─ TripService/
 │  │  ├─ TripService.Domain/        # Entity, enum (không phụ thuộc gì)
 │  │  ├─ TripService.Application/   # Use case, interface
@@ -137,7 +143,7 @@ SwiftRide/
 │  └─ PaymentService/               # Cùng 4 lớp, PostgreSQL
 ├─ frontend/                        # React + Vite
 ├─ tests/                           # xUnit cho từng service
-├─ docker-compose.yml               # 3 database + RabbitMQ
+├─ docker-compose.yml               # 4 database container + RabbitMQ
 └─ SwiftRide.sln
 ```
 
@@ -171,7 +177,8 @@ MongoDB không có migration: sửa class trong `Infrastructure/Mongo/Documents.
 ```powershell
 docker compose down -v
 docker compose up -d
-# chạy lại 3 service → database được tạo lại cùng dữ liệu mẫu
+powershell -File scripts/split-identity.ps1
+# Sau đó chạy lại 4 service và Gateway.
 ```
 
 ---
@@ -241,3 +248,20 @@ git push origin an
 - **Migration:** mỗi lúc chỉ một người tạo migration cho một service. Luôn `git pull origin main` trước khi chạy `dotnet ef migrations add`. Không sửa file migration đã có trên `main`.
 - **Không commit** `bin/`, `obj/`, `node_modules/`, `.vs/` (đã có trong `.gitignore`).
 - Pull về có migration mới: chỉ cần chạy lại service là database tự cập nhật.
+
+## Auth/User sau khi tách IdentityService
+
+- Gateway `5000`: `/auth/*` đến Identity `5004`; `/trips/*` và `/drivers/me/*` đến Trip `5001`.
+- `swiftride-identity-sqlserver` (1435), volume `identity-sqlserver-data`: UserDb chứa Users, Roles, OutboxMessages.
+- `swiftride-sqlserver` (1434), volume `sqlserver-data`: TripDb chứa dữ liệu chuyến, offer, fare, history.
+- Trip không có khóa ngoại sang UserDb; tên tài xế được lưu trên offer từ kết quả Matching.
+- JWT giữ issuer/audience/key hiện tại để token cũ tiếp tục dùng được. Identity cấp token đăng nhập; các service tự xác thực.
+- Matching nhận đăng ký tài xế từ `identity-service`; cập nhật trạng thái vẫn từ `trip-service`.
+
+### Chuyển dữ liệu
+
+Dừng các API trước khi chuyển. Máy mới hoặc máy chưa tách Auth: chạy `scripts/split-identity.ps1` sau khi hai SQL Server đã sẵn sàng. Script dùng UserDb tạm trên server Trip để xử lý migration cũ, rồi chuyển sang container Identity.
+
+Máy đã tách Auth nhưng UserDb còn ở 1434: chỉ chạy `scripts/move-userdb-container.ps1`. Script backup/restore, so sánh SHA-256 của từng bảng và chỉ xóa bản cũ sau khi dữ liệu khớp. Backup được giữ ở cả hai container; ID, hash mật khẩu và outbox không thay đổi.
+
+Sau khi chuyển, chạy các service bằng `3-run-services.ps1`. Không chạy lại script tách ban đầu trên hệ thống đã hoàn tất. Rollback cần backup và phiên bản code tương ứng, không tự động chạy lùi migration.

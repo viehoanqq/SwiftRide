@@ -44,16 +44,6 @@ public class ExceptionMiddleware(RequestDelegate next, ILogger<ExceptionMiddlewa
                 message = "Dữ liệu chuyến đi vừa được cập nhật bởi yêu cầu khác. Vui lòng tải lại chuyến đi."
             });
         }
-        catch (NotImplementedException ex)
-        {
-            logger.LogWarning(ex, "API workflow chưa được triển khai");
-            context.Response.StatusCode = StatusCodes.Status501NotImplemented;
-            await context.Response.WriteAsJsonAsync(new
-            {
-                code = "NOT_IMPLEMENTED",
-                message = "Chức năng này đang chờ thành viên phụ trách triển khai."
-            });
-        }
         catch (Exception ex)                        // lỗi không lường trước: 500
         {
             logger.LogError(ex, "Lỗi không mong muốn");

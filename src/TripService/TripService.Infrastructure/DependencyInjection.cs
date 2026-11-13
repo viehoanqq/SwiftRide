@@ -5,7 +5,6 @@ using TripService.Infrastructure.Persistence;
 
 
 using TripService.Application.Interfaces;          // thêm
-using TripService.Infrastructure.Auth;             // thêm
 using TripService.Infrastructure.Clients;
 using TripService.Infrastructure.Repositories; 
 
@@ -17,12 +16,11 @@ public static class DependencyInjection
     {
         services.AddDbContext<TripDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString("TripDb")));
-        services.AddScoped<IUserRepository, UserRepository>();     // thêm: dùng DbContext nên Scoped
-        services.AddSingleton<IPasswordHasher, PasswordHasher>();  // thêm: không giữ trạng thái nên Singleton   
-        services.AddSingleton<ITokenService, JwtTokenService>();
         services.AddScoped<ITripRepository, TripRepository>();     // thêm: dùng DbContext nên Scoped
 
         services.AddHttpContextAccessor();
+        services.AddTransient<ForwardRequestHeadersHandler>();
+        services.AddTransient<ServiceAuthorizationHandler>();
         var matchingServiceUrl = configuration["Services:MatchingService"];
         if (!Uri.TryCreate(matchingServiceUrl, UriKind.Absolute, out var matchingServiceUri) ||
             (matchingServiceUri.Scheme != Uri.UriSchemeHttp && matchingServiceUri.Scheme != Uri.UriSchemeHttps))
@@ -35,7 +33,13 @@ public static class DependencyInjection
         {
             client.BaseAddress = matchingServiceUri;
             client.Timeout = Timeout.InfiniteTimeSpan;
-        });
+        }).AddHttpMessageHandler<ForwardRequestHeadersHandler>();
+
+        services.AddHttpClient<IDriverStatusClient, DriverStatusClient>(client =>
+        {
+            client.BaseAddress = matchingServiceUri;
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        }).AddHttpMessageHandler<ServiceAuthorizationHandler>();
 
         return services;
     }

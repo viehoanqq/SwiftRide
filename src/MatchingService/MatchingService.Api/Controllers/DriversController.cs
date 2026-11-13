@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace MatchingService.Api.Controllers;
 
 [ApiController]
-[Authorize ]
+[Authorize(Policy = "DriverStatusSync")]
 [Route("drivers")]
 public class DriversController(DriverAppService driverAppService) : ControllerBase
 {

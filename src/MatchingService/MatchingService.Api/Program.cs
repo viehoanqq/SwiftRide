@@ -23,7 +23,7 @@ builder.Services.AddSwaggerGen(options =>
         Type = SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT",
-        Description = "Dán accessToken lấy từ POST /auth/login (Trip Service)"
+        Description = "Dán accessToken lấy từ POST /auth/login (Identity Service)"
     });
     options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
     {
@@ -31,7 +31,7 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-// Kiểm tra token do Trip Service ký – phải dùng chung Issuer, Audience, Key
+// Kiểm tra token do Identity Service ký – dùng chung Issuer, Audience, Key.
 var jwt = builder.Configuration.GetSection("Jwt");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -93,7 +93,17 @@ builder.Services.AddSingleton<PromoPricing>();
 builder.Services.AddSingleton<
     IPricingStrategySelector, PricingStrategySelector>();
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("DriverRegistration", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireClaim("sub", "identity-service")
+        .RequireClaim("scope", "drivers:register"));
+    options.AddPolicy("DriverStatusSync", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireClaim("sub", "trip-service")
+        .RequireClaim("scope", "drivers:status"));
+});
 
 var app = builder.Build();
 

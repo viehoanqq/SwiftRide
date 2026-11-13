@@ -16,7 +16,7 @@ public class TripCreateAndCurrentTests
 
     public TripCreateAndCurrentTests()
     {
-        _service = new TripAppService(_tripRepository.Object, _matchingClient.Object);
+        _service = new TripAppService(_tripRepository.Object, _matchingClient.Object, Mock.Of<IDriverStatusClient>());
     }
 
     [Fact]

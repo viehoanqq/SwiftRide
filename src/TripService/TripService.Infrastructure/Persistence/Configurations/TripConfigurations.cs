@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TripService.Domain.Entities;
-using TripService.Infrastructure.Outbox;
 
 namespace TripService.Infrastructure.Persistence.Configurations;
 
@@ -15,10 +14,6 @@ public class TripConfiguration : IEntityTypeConfiguration<Trip>
         builder.Property(t => t.RowVersion).IsRowVersion();
         builder.HasIndex(t => new { t.RiderId, t.Status });
 
-        builder.HasOne<User>()
-            .WithMany()
-            .HasForeignKey(t => t.RiderId)
-            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(t => t.Location)
             .WithOne()
@@ -78,14 +73,12 @@ public class TripDriverOfferConfiguration : IEntityTypeConfiguration<TripDriverO
     {
         builder.ToTable("TripDriverOffers");
         builder.HasKey(o => o.Id);
+        builder.Property(o => o.DistanceToPickupKm).IsRequired();
         builder.Property(o => o.Status).HasConversion<string>().HasMaxLength(10).IsUnicode(false);
         builder.HasIndex(o => new { o.TripId, o.AttemptNo }).IsUnique();
         builder.HasIndex(o => new { o.DriverId, o.Status });
 
-        builder.HasOne(o => o.Driver)
-            .WithMany()
-            .HasForeignKey(o => o.DriverId)
-            .OnDelete(DeleteBehavior.Restrict);
+        builder.Property(o => o.DriverName).HasMaxLength(100).IsRequired();
     }
 }
 
@@ -101,15 +94,3 @@ public class TripStatusHistoryConfiguration : IEntityTypeConfiguration<TripStatu
     }
 }
 
-public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage>
-{
-    public void Configure(EntityTypeBuilder<OutboxMessage> builder)
-    {
-        builder.ToTable("OutboxMessages");
-        builder.HasKey(m => m.Id);
-        builder.Property(m => m.Type).HasMaxLength(100).IsUnicode(false).IsRequired();
-        builder.Property(m => m.Payload).IsRequired();
-        // Worker chỉ quét các message chưa xử lý.
-        builder.HasIndex(m => m.OccurredAt).HasFilter("[ProcessedAt] IS NULL");
-    }
-}

@@ -86,7 +86,7 @@ public static class TripDtoMappings
                     trip.Fare.Status.ToString()),
             acceptedOffer is null
                 ? null
-                : new TripDriverDto(acceptedOffer.DriverId, acceptedOffer.Driver.FullName),
+                : new TripDriverDto(acceptedOffer.DriverId, acceptedOffer.DriverName),
             trip.History
                 .OrderBy(history => history.Id)
                 .Select(history => new TripHistoryDto(

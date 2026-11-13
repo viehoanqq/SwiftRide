@@ -9,8 +9,11 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        var connection = configuration.GetConnectionString("PayDb");
+        if (string.IsNullOrWhiteSpace(connection))
+            throw new InvalidOperationException("ConnectionStrings:PayDb is required.");
         services.AddDbContext<PayDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("PayDb"))
+            options.UseNpgsql(connection, npgsql => npgsql.CommandTimeout(30))
                 .UseSnakeCaseNamingConvention());
 
         return services;

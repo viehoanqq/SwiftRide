@@ -1,4 +1,4 @@
-﻿# 3-run-services.ps1: Khoi chay docker, backend services va frontend tren cac terminal rieng
+# 3-run-services.ps1: Khoi chay docker, backend services va frontend tren cac terminal rieng
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 chcp 65001 >$null
@@ -41,6 +41,10 @@ Write-Host "Frontend ready." -ForegroundColor Green
 # 3. Backend Services
 Write-Host "[3/4] Launching Backend Services..." -ForegroundColor Yellow
 
+# Identity Service (:5004)
+$identityCmd = "dotnet run --project '$PSScriptRoot\src\IdentityService\IdentityService.Api'"
+Start-Process powershell -WindowStyle Hidden -ArgumentList "-NoExit", "-Command", $identityCmd
+
 # Trip Service (:5001)
 $tripCmd = "[Console]::Title = 'SwiftRide - Trip Service (:5001)'; Write-Host 'TRIP SERVICE (:5001)' -ForegroundColor Green; dotnet run --project '$PSScriptRoot\src\TripService\TripService.Api'"
 Start-Process powershell -ArgumentList "-NoExit", "-Command", $tripCmd
@@ -71,6 +75,7 @@ Write-Host "
 System URLs:" -ForegroundColor Cyan
 Write-Host "Web Frontend:       http://localhost:5173" -ForegroundColor White
 Write-Host "Gateway Health:     http://localhost:5000/health" -ForegroundColor White
+Write-Host "Identity Swagger:   http://localhost:5004/swagger" -ForegroundColor White
 Write-Host "Trip Swagger:       http://localhost:5001/swagger" -ForegroundColor White
 Write-Host "Matching Swagger:   http://localhost:5002/swagger" -ForegroundColor White
 Write-Host "Payment Swagger:    http://localhost:5003/swagger" -ForegroundColor White

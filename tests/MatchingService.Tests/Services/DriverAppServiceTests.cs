@@ -23,7 +23,6 @@ public class DriverAppServiceTests
     [InlineData("Busy", DriverStatus.Busy)]
     [InlineData("busy", DriverStatus.Busy)]
     [InlineData("Available", DriverStatus.Available)]
-    [InlineData("Offline", DriverStatus.Offline)]
     public async Task UpdateStatus_ShouldSucceed_WhenDriverExistsAndStatusValid(string inputStatus, DriverStatus expectedStatus)
     {
         // Arrange
@@ -76,6 +75,8 @@ public class DriverAppServiceTests
     }
 
     [Theory]
+    [InlineData("Offline")]
+    [InlineData("0")]
     [InlineData("Eating")]
     [InlineData("")]
     [InlineData("   ")]

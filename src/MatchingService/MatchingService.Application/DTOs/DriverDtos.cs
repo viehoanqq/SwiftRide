@@ -8,7 +8,7 @@ public record DriverDto(
     string Id,
     string Name,
     string Status,
-    GeoPoint Location,
+    GeoPoint? Location,
     DateTime UpdatedAt);
 
 public static class DriverMappings
