@@ -181,38 +181,41 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
         return trip.ToTripDetailDto();
     }
 
-    public async Task<IReadOnlyList<DriverOfferDto>> GetOffersAsync(
+    // public Task<IReadOnlyList<DriverOfferDto>> GetOffersAsync(
+    //     Guid driverId,
+    //     CancellationToken cancellationToken)
+    //     => throw new NotImplementedException("Driver offer workflow is not implemented yet.");
+
+   public async Task<IReadOnlyList<DriverOfferDto>> GetOffersAsync(
         Guid driverId,
         CancellationToken cancellationToken)
     {
-        var pendingTrips = await trips.GetTripsWithPendingOffersForDriverAsync(
-            driverId, cancellationToken);
+        var tripsWithOffers = await trips.GetTripsWithPendingOffersForDriverAsync(driverId, cancellationToken);
+        
+        var result = new List<DriverOfferDto>();
+        foreach (var t in tripsWithOffers)
+        {
+            var offer = t.Offers.FirstOrDefault(o => o.DriverId == driverId);
+            if (offer == null) continue;
 
-        return pendingTrips.SelectMany(trip => trip.Offers
-                .Where(offer => offer.DriverId == driverId && offer.Status == OfferStatus.Pending)
-                .Select(offer => new DriverOfferDto(
-                    offer.Id,
-                    trip.Id,
-                    new LocationDto((double)trip.Location.PickupLat,
-                        (double)trip.Location.PickupLng, trip.Location.PickupAddress),
-                    new LocationDto((double)trip.Location.DropoffLat,
-                        (double)trip.Location.DropoffLng, trip.Location.DropoffAddress),
-                    trip.Fare?.Price ?? throw new InvalidOperationException("Offered trip has no fare."),
-                    offer.DistanceToPickupKm,
-                    new DateTimeOffset(DateTime.SpecifyKind(offer.CreatedAt, DateTimeKind.Utc)))))
-            .OrderByDescending(offer => offer.CreatedAt)
-            .ThenBy(offer => offer.OfferId)
-            .ToList();
+            result.Add(new DriverOfferDto(
+                offer.Id,
+                t.Id,
+                new LocationDto((double)t.Location.PickupLat, (double)t.Location.PickupLng, t.Location.PickupAddress),
+                new LocationDto((double)t.Location.DropoffLat, (double)t.Location.DropoffLng, t.Location.DropoffAddress),
+                t.Fare?.Price ?? 0,
+                0.0, // Khoảng cách giả định tới điểm đón
+                offer.CreatedAt
+            ));
+        }
+        return result;
     }
-
-    public async Task<TripDetailDto?> GetCurrentTripAsync(
-        Guid driverId,
-        CancellationToken cancellationToken)
-    {
-        var trip = await trips.GetActiveByDriverAsync(driverId, cancellationToken);
-        return trip?.ToTripDetailDto();
-    }
-
+    
+    public async Task<TripDetailDto?> GetCurrentTripAsync(Guid driverId, CancellationToken cancellationToken)
+{
+    var trip = await trips.GetActiveByDriverAsync(driverId, cancellationToken);
+    return trip?.ToTripDetailDto();
+}
     public async Task<TripDriverActionResponse> AcceptOfferAsync(
     Guid tripId,
     Guid driverId,
@@ -334,5 +337,80 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
             throw new ValidationException($"{label} phải có tọa độ và địa chỉ hợp lệ.");
         }
     }
+    public async Task<bool> ProcessInitialMatchingAsync(
+        Guid tripId,
+        string paymentMethod,
+        CancellationToken cancellationToken)
+    {
+        var trip = await trips.GetByIdAsync(tripId);
+        if (trip is null || trip.Status != TripStatus.Quoted) return false;
+
+        if (!Enum.TryParse<PaymentMethod>(paymentMethod, ignoreCase: true, out var parsedPaymentMethod))
+        {
+            return false;
+        }
+
+        trip.Confirm(parsedPaymentMethod);
+
+        var matchedDriver = await matching.MatchAsync(new MatchDriverRequest(
+            (double)trip.Location.PickupLat,
+            (double)trip.Location.PickupLng));
+
+        if (matchedDriver is null)
+        {
+            trip.MarkFailed();
+            await trips.SaveChangesAsync();
+            return false;
+        }
+
+        if (Guid.TryParse(matchedDriver.DriverId, out var driverId) && driverId != Guid.Empty)
+        {
+            var offer = trip.OfferDriver(driverId, trip.Offers.Count + 1);
+            trips.AddOffer(offer);
+        }
+
+        await trips.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task CancelTripAsync(
+        Guid tripId,
+        CancellationToken cancellationToken)
+    {
+        var trip = await trips.GetByIdAsync(tripId);
+        if (trip is not null)
+        {
+            trip.Cancel();
+            await trips.SaveChangesAsync();
+        }
+    }
+
+    public async Task<TripDriverActionResponse> UpdateTripStatusAsync(
+        Guid tripId, 
+        TripStatus status, 
+        CancellationToken cancellationToken)
+    {
+        var trip = await trips.GetByIdAsync(tripId);
+        if (trip is null)
+        {
+            throw new NotFoundException("TRIP_NOT_FOUND", $"Không tìm thấy chuyến đi với ID {tripId}");
+        }
+
+        if (status == TripStatus.EnRoute)
+        {
+            trip.MarkEnRoute();
+        }
+        else if (status == TripStatus.PickedUp)
+        {
+            trip.MarkPickedUp();
+        }
+        else if (status == TripStatus.DroppedOff)
+        {
+            trip.MarkDroppedOff();
+        }
+
+        await trips.SaveChangesAsync();
+        return new TripDriverActionResponse(trip.Status.ToString());   
+     }
 
 }

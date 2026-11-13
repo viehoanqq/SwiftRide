@@ -1,3 +1,4 @@
+using System;
 using PaymentService.Domain.Enums;
 
 namespace PaymentService.Domain.Entities;

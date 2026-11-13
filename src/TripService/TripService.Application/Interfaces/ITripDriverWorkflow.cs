@@ -1,4 +1,5 @@
 using TripService.Application.DTOs;
+using TripService.Domain.Enums;
 
 namespace TripService.Application.Interfaces;
 
@@ -44,4 +45,21 @@ public interface ITripDriverWorkflow
         Guid tripId,
         Guid driverId,
         CancellationToken cancellationToken);
+
+    // ==========================================
+    // BỔ SUNG CHO ĐỢT 4 (Xác nhận giá & Ghép tài xế)
+    // ==========================================
+
+    /// <summary>Xử lý khi Rider đồng ý giá và khởi động tìm kiếm tài xế đầu tiên (/match).</summary>
+    Task<bool> ProcessInitialMatchingAsync(
+        Guid tripId,
+        string paymentMethod,
+        CancellationToken cancellationToken);
+
+    /// <summary>Hủy chuyến khi Rider từ chối giá cước.</summary>
+    Task CancelTripAsync(
+        Guid tripId,
+        CancellationToken cancellationToken);
+
+    Task<TripDriverActionResponse> UpdateTripStatusAsync(Guid tripId, TripStatus status, CancellationToken cancellationToken);
 }
