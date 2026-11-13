@@ -24,9 +24,14 @@ public static class DependencyInjection
             client.BaseAddress = new Uri(configuration["Matching:BaseUrl"] ?? "http://localhost:5000");
             client.Timeout = TimeSpan.FromSeconds(3);
         });
+        services.AddHttpClient<IPaymentClient, PaymentClient>(client =>
+        {
+            client.BaseAddress = new Uri(configuration["Payment:BaseUrl"] ?? "http://localhost:5003");
+            client.Timeout = TimeSpan.FromSeconds(3);
+        });
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<ITokenService, JwtTokenService>();
-        services.AddScoped<ITripRepository, TripRepository>();     // thêm: dùng DbContext nên Scoped
+        services.AddScoped<ITripRepository, TripRepository>();
         return services;
     }
 

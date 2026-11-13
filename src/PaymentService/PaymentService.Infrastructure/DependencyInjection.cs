@@ -1,7 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using PaymentService.Application.Interfaces;
+using PaymentService.Application.Services;
 using PaymentService.Infrastructure.Persistence;
+using PaymentService.Infrastructure.Repositories;
 
 namespace PaymentService.Infrastructure;
 
@@ -12,6 +15,16 @@ public static class DependencyInjection
         services.AddDbContext<PayDbContext>(options =>
             options.UseNpgsql(configuration.GetConnectionString("PayDb"))
                 .UseSnakeCaseNamingConvention());
+
+        services.AddScoped<IPaymentRepository, PaymentRepository>();
+
+        var riderStartingBalance = decimal.TryParse(configuration["Payment:StartingBalance"], out var balance)
+            ? balance
+            : 500_000m;
+
+        services.AddScoped(sp => new PaymentAppService(
+            sp.GetRequiredService<IPaymentRepository>(),
+            riderStartingBalance));
 
         return services;
     }
