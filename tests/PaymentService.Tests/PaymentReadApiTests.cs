@@ -21,6 +21,33 @@ namespace PaymentService.Tests;
 public class PaymentReadApiTests
 {
     [Theory]
+    [InlineData("service-create", false, 201)]
+    [InlineData("service-create", true, 200)]
+    [InlineData("Rider", false, 403)]
+    [InlineData("Driver", false, 403)]
+    [InlineData("service-refund", false, 403)]
+    [InlineData("anonymous", false, 401)]
+    public async Task Create_IsInternal_AndReturnsCreatedOrReplay(string identity, bool replay, int expected)
+    {
+        using var app = new PaymentReadFactory();
+        using var client = app.CreateClient();
+        app.Payments.Setup(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PaymentCreationResult(new(app.PaymentId, PaymentState.SUCCEEDED), replay));
+        if (identity != "anonymous") client.DefaultRequestHeaders.Authorization = new("Bearer", app.Token(identity));
+        var request = new CreatePaymentRequest(app.TripId, app.UserId, Guid.NewGuid(), 100m, PaymentMethod.WALLET, "create-once");
+        using var response = await client.PostAsJsonAsync("/payments", request);
+        Assert.Equal((HttpStatusCode)expected, response.StatusCode);
+        app.Payments.Verify(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()),
+            expected is 200 or 201 ? Times.Once() : Times.Never());
+        if (expected is 200 or 201)
+        {
+            var body = await response.Content.ReadFromJsonAsync<CreatePaymentResponse>();
+            Assert.Equal(app.PaymentId, body!.PaymentId);
+            Assert.Equal(PaymentState.SUCCEEDED, body.Status);
+        }
+    }
+
+    [Theory]
     [InlineData("Rider", "id", 200)]
     [InlineData("Driver", "id", 403)]
     [InlineData("Rider", "trip", 200)]

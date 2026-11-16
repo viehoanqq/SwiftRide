@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { tripApi } from '../../api/tripApi';
-import { paymentApi } from '../../api/paymentApi';
+import useTripPayment from '../../hooks/useTripPayment';
 import { getErrorMessage } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import usePolling from '../../hooks/usePolling';
@@ -25,38 +25,9 @@ export default function DriverTripPage() {
   const locked = useRef(false);
   const [actionError, setActionError] = useState('');
 
-  const [payment, setPayment] = useState(null);
-  const [paymentError, setPaymentError] = useState('');
+  const { data: payment, error: paymentError, refresh: refreshPayment } = useTripPayment(id, trip?.status);
 
   const action = trip?.driver?.id === user.id ? actions[trip.status] : null;
-
-  useEffect(() => {
-    if (!trip || (trip.status !== 'Paid' && trip.status !== 'PaymentFailed')) {
-      setPayment(null);
-      setPaymentError('');
-      return;
-    }
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await paymentApi.getByTripId(id);
-        if (!cancelled) {
-          setPayment(res);
-          setPaymentError('');
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setPayment(null);
-          setPaymentError(getErrorMessage(err));
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [id, trip?.status]);
 
   const submit = async () => {
     if (!action || locked.current) return;
@@ -83,10 +54,10 @@ export default function DriverTripPage() {
       {actionError && <p role="alert">{actionError}</p>}
       {trip && (
         <>
-          {trip.status === 'Paid' && (
+          {trip.status === 'Paid' && payment?.status !== 'REFUNDED' && (
             <fieldset style={{ borderColor: 'green', marginBottom: '1rem' }}>
               <legend style={{ color: 'green', fontWeight: 'bold' }}>
-                Đã nhận thanh toán (Paid)
+                Kết quả thanh toán
               </legend>
               {payment && payment.status === 'SUCCEEDED' ? (
                 <>
@@ -113,6 +84,7 @@ export default function DriverTripPage() {
             </fieldset>
           )}
 
+          {payment?.status === 'REFUNDED' && <p>Giao dịch đã hoàn tiền. Khoản nhận của chuyến đã được thu hồi.</p>}
           <TripDetails trip={trip} />
           <p>API hiện chưa cung cấp tên và số điện thoại khách.</p>
           {action && (
@@ -127,7 +99,7 @@ export default function DriverTripPage() {
         </>
       )}
       <p>
-        <button type="button" disabled={submitting} onClick={refresh}>
+        <button type="button" disabled={submitting} onClick={() => { refresh(); refreshPayment(); }}>
           Tải lại
         </button>
       </p>

@@ -32,11 +32,9 @@ function buildTimelineSteps(trip) {
     });
   }
 
-  const activeIndex = baseSteps.findIndex(step => step.key === trip.status);
-
-  return baseSteps.map((step, index) => {
+  return baseSteps.map(step => {
     const timestamp = historyMap.get(step.key);
-    const completed = Boolean(timestamp) || (activeIndex !== -1 && index <= activeIndex);
+    const completed = historyMap.has(step.key) || step.key === trip.status;
     const isCurrent = step.key === trip.status;
     return { ...step, timestamp, completed, isCurrent };
   });

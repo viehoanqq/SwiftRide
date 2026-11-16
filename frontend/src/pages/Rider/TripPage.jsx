@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { tripApi } from '../../api/tripApi';
-import { paymentApi } from '../../api/paymentApi';
+import useTripPayment from '../../hooks/useTripPayment';
 import { getErrorMessage } from '../../api/client';
 import usePolling from '../../hooks/usePolling';
 import TripDetails from '../../components/TripDetails';
@@ -19,33 +19,8 @@ export default function TripPage() {
   const [paymentMethod, setPaymentMethod] = useState('WALLET');
   const [actionError, setActionError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [paymentInfo, setPaymentInfo] = useState(null);
-  const [paymentLoading, setPaymentLoading] = useState(false);
-  const [paymentError, setPaymentError] = useState('');
+  const { data: paymentInfo, loading: paymentLoading, error: paymentError, refresh: refreshPayment } = useTripPayment(id, trip?.status);
   const locked = useRef(false);
-
-  useEffect(() => {
-    if (!trip || (trip.status !== 'Paid' && trip.status !== 'PaymentFailed')) {
-      setPaymentInfo(null);
-      setPaymentError('');
-      return;
-    }
-
-    const controller = new AbortController();
-    setPaymentLoading(true);
-    setPaymentError('');
-
-    paymentApi.getByTripId(id, controller.signal)
-      .then(data => setPaymentInfo(data))
-      .catch(err => {
-        if (err.name !== 'CanceledError' && err.code !== 'ERR_CANCELED') {
-          setPaymentError(getErrorMessage(err));
-        }
-      })
-      .finally(() => setPaymentLoading(false));
-
-    return () => controller.abort();
-  }, [id, trip?.status]);
 
   const confirm = async accept => {
     if (locked.current) return;
@@ -74,7 +49,7 @@ export default function TripPage() {
     {actionError && <p role="alert">{actionError}</p>}
 
     {trip && <>
-      {trip.status === 'Paid' && (
+      {trip.status === 'Paid' && paymentInfo?.status !== 'REFUNDED' && (
         <fieldset style={{ borderColor: 'green', marginBottom: '1rem' }}>
           <legend style={{ color: 'green', fontWeight: 'bold' }}>Thanh toán thành công (Paid)</legend>
           {paymentLoading && <p>Đang tải chi tiết thanh toán...</p>}
@@ -98,6 +73,7 @@ export default function TripPage() {
         </fieldset>
       )}
 
+      {paymentInfo?.status === 'REFUNDED' && <p>Giao dịch đã được hoàn tiền: {money(paymentInfo.amount)}.</p>}
       <TripDetails trip={trip} />
 
       {trip.status === 'Quoted' && trip.fare?.status === 'Pending' && <fieldset disabled={submitting || !!error}>
@@ -105,7 +81,7 @@ export default function TripPage() {
         <label htmlFor="payment-method">Thanh toán </label>
         <select id="payment-method" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
           <option value="WALLET">Ví</option>
-          <option value="CARD">Thẻ</option>
+          <option value="CARD" disabled>Thẻ (chưa hỗ trợ)</option>
         </select>{' '}
         <button type="button" onClick={() => confirm(true)}>Đồng ý</button>{' '}
         <button type="button" onClick={() => confirm(false)}>Từ chối</button>
@@ -115,7 +91,7 @@ export default function TripPage() {
       {trip.status === 'PaymentPending' && <p>Chuyến đã trả khách, đang chờ thanh toán.</p>}
     </>}
 
-    <p><button type="button" disabled={submitting} onClick={refresh}>Tải lại</button></p>
+    <p><button type="button" disabled={submitting} onClick={() => { refresh(); refreshPayment(); }}>Tải lại</button></p>
     <p>
       <Link to="/wallet">Ví của tôi</Link>{' | '}
       <Link to="/rider" state={{ showHome: true }}>Về trang Rider</Link>

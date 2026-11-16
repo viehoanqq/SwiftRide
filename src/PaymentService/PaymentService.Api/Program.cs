@@ -6,8 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi;
 using PaymentService.Application.Options;
 using Microsoft.Extensions.Options;
-using PaymentService.Application.Services;
-using PaymentService.Application.Interfaces;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOptions<PaymentOptions>()
@@ -17,19 +16,6 @@ builder.Services.AddOptions<PaymentOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<PaymentOptions>>().Value);
 
-
-// ==========================================
-// THÊM CÁC ĐĂNG KÝ DI CHO PAYMENT SERVICE 
-// ==========================================
-builder.Services.AddScoped<ILedgerService, LedgerService>();
-builder.Services.AddScoped<IPaymentMethodFactory, PaymentMethodFactory>();
-builder.Services.AddScoped<WalletPayment>();
-builder.Services.AddScoped<CardPayment>();
-
-//  ĐĂNG KÝ DI CHO WALLET APP SERVICE
-builder.Services.AddScoped<IWalletAppService, WalletAppService>();
-
-builder.Services.AddScoped<IPaymentAppService, PaymentAppService>();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<PaymentService.Application.Interfaces.IPaymentCheckoutService,
     PaymentService.Application.Services.PaymentCheckoutService>();
@@ -59,15 +45,6 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", policy =>
-    {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
-    });
-});
 var app = builder.Build();
 
 if (!app.Environment.IsEnvironment("Testing"))

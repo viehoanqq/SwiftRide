@@ -2,10 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using PaymentService.Application.DTOs;
 using PaymentService.Domain.Entities;
 using PaymentService.Infrastructure.Messaging;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using PaymentService.Domain.Entities;
-using PaymentService.Infrastructure.Messaging;
+
 namespace PaymentService.Infrastructure.Persistence;
 
 public class PayDbContext(DbContextOptions<PayDbContext> options) : DbContext(options)
@@ -17,22 +14,11 @@ public class PayDbContext(DbContextOptions<PayDbContext> options) : DbContext(op
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<ProcessedMessage> ProcessedMessages => Set<ProcessedMessage>();
 
-    
-
-protected override void OnModelCreating(ModelBuilder modelBuilder)
-{
-    modelBuilder.ApplyConfigurationsFromAssembly(typeof(PayDbContext).Assembly);
-
-    if (Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Account>()
-            .Property(a => a.Version)
-            .ValueGeneratedNever()
-            .IsConcurrencyToken();
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(PayDbContext).Assembly);
+        if (Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
+            modelBuilder.Entity<Account>().Property(a => a.Version).ValueGeneratedNever().IsConcurrencyToken();
+        SeedData.Apply(modelBuilder);
     }
-
-    SeedData.Apply(modelBuilder);
-}
-
-
 }

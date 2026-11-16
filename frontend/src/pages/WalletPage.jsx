@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { walletApi } from '../api/walletApi';
-import { getErrorMessage } from '../api/client';
+import usePolling from '../hooks/usePolling';
 import { useAuth } from '../auth/AuthContext';
 import { money } from '../utils/format';
 
@@ -14,38 +14,12 @@ const ENTRY_TYPE_LABELS = {
 
 export default function WalletPage() {
   const { user, logout } = useAuth();
-  const [wallet, setWallet] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const load = useCallback(signal => walletApi.getMyWallet(signal), []);
+  const { data: wallet, loading, error, refresh: loadWallet } = usePolling(load, false);
 
   const isDriver = user?.role === 'Driver';
   const backLink = isDriver ? '/driver' : '/rider';
   const backState = isDriver ? undefined : { showHome: true };
-
-  const loadWallet = useCallback(async (signal) => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await walletApi.getMyWallet(signal);
-      if (!signal?.aborted) {
-        setWallet(data);
-      }
-    } catch (err) {
-      if (!signal?.aborted && err.name !== 'CanceledError') {
-        setError(getErrorMessage(err));
-      }
-    } finally {
-      if (!signal?.aborted) {
-        setLoading(false);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    loadWallet(controller.signal);
-    return () => controller.abort();
-  }, [loadWallet]);
 
   const entries = wallet?.entries ?? [];
 

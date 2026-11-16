@@ -23,16 +23,11 @@ public static class SeedData
             NewAccount("33333333-0000-0000-0000-000000000025", "22222222-0000-0000-0000-000000000005", OwnerType.Driver, 0));
     }
 
-    private static Account NewAccount(
-    string id,
-    string ownerId,
-    OwnerType ownerType,
-    decimal balance) => new()
-{
-    Id = Guid.Parse(id),
-    OwnerId = ownerId,
-    OwnerType = ownerType,
-    Balance = balance,
-    Version = 0
-};
+    private static Account NewAccount(string id, string ownerId, OwnerType ownerType, decimal balance) => new()
+    {
+        Id = Guid.Parse(id),
+        OwnerId = ownerId,
+        OwnerType = ownerType,
+        Balance = balance
+    };
 }

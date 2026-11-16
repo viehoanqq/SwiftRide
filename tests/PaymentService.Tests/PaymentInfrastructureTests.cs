@@ -58,6 +58,7 @@ public class PaymentInfrastructureTests
     public void PayDbContextModel_ConfiguresUniqueConstraintsConcurrencyAndRefundReceipts()
     {
         using var db = CreateContext();
+        Assert.False(db.Database.HasPendingModelChanges());
         var model = db.Model;
 
         var accountEntity = model.FindEntityType(typeof(Account))!;

@@ -22,25 +22,14 @@ public class AccountConfiguration : IEntityTypeConfiguration<Account>
     public void Configure(EntityTypeBuilder<Account> builder)
     {
         builder.HasKey(a => a.Id);
-
-        builder.Property(a => a.OwnerId)
-            .HasMaxLength(50)
-            .IsRequired();
-
-        builder.Property(a => a.OwnerType)
-            .AsUpperString(10);
-
-        builder.Property(a => a.Balance)
-            .HasPrecision(18, 2);
-
-        
-        builder.Property(a => a.Version)
-            .IsConcurrencyToken();
-
-        builder.HasIndex(a => new { a.OwnerId, a.OwnerType })
-            .IsUnique();
+        builder.Property(a => a.OwnerId).HasMaxLength(50).IsRequired();
+        builder.Property(a => a.OwnerType).AsUpperString(10);
+        builder.Property(a => a.Balance).HasPrecision(18, 2);
+        builder.Property(a => a.Version).IsRowVersion();
+        builder.HasIndex(a => new { a.OwnerId, a.OwnerType }).IsUnique();
     }
 }
+
 public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
 {
     public void Configure(EntityTypeBuilder<Payment> builder)
