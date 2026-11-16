@@ -2,7 +2,7 @@ using MatchingService.Domain.Entities;
 
 namespace MatchingService.Application.DTOs;
 
-public record UpdateDriverStatusRequest(string Status);
+public record UpdateDriverStatusRequest(string Status, Guid? TripId = null);
 
 public record DriverDto(
     string Id,

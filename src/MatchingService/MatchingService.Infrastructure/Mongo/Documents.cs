@@ -9,6 +9,7 @@ public class DriverDocument
     public string Id { get; set; } = null!;
     public string Name { get; set; } = null!;
     public DriverStatus Status { get; set; }
+    public string? StatusTripId { get; set; }
     // GeoJSON Point, tọa độ theo thứ tự [lng, lat]; có index 2dsphere.
     public GeoJsonPoint<GeoJson2DGeographicCoordinates>? Location { get; set; }
     public DateTime UpdatedAt { get; set; }

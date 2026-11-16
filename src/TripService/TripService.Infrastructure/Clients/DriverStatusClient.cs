@@ -7,10 +7,19 @@ namespace TripService.Infrastructure.Clients;
 
 public sealed class DriverStatusClient(HttpClient httpClient) : IDriverStatusClient
 {
-    public async Task SetStatusAsync(
+    public Task SetTripStatusAsync(Guid driverId, Guid tripId, DriverAvailabilityStatus status, CancellationToken cancellationToken)
+    {
+        if (tripId == Guid.Empty) throw new ValidationException("TripId is required.");
+        return SendStatusAsync(driverId, status, cancellationToken, tripId);
+    }
+
+    public Task SetStatusAsync(Guid driverId, DriverAvailabilityStatus status, CancellationToken cancellationToken)
+        => SendStatusAsync(driverId, status, cancellationToken, null);
+
+    private async Task SendStatusAsync(
         Guid driverId,
         DriverAvailabilityStatus status,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Guid? tripId)
     {
         if (driverId == Guid.Empty)
             throw new ValidationException("DriverId không hợp lệ.");
@@ -31,7 +40,7 @@ public sealed class DriverStatusClient(HttpClient httpClient) : IDriverStatusCli
         {
             Content = JsonContent.Create(new
             {
-                status = status.ToString()
+                status = status.ToString(), tripId
             })
         };
 

@@ -17,6 +17,8 @@ builder.Services.AddOptions<PaymentOptions>()
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<PaymentOptions>>().Value);
 
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddScoped<PaymentService.Application.Interfaces.IPaymentCheckoutService,
+    PaymentService.Application.Services.PaymentCheckoutService>();
 builder.Services.AddPaymentSecurity(builder.Configuration);
 builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
 {

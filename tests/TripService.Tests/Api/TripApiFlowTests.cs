@@ -83,8 +83,8 @@ public class TripApiFlowTests
             r.Amount == 50000m &&
             r.Method == ContractPaymentMethod.WALLET &&
             r.IdempotencyKey == PaymentProtocol.TripPaymentKey(id)), It.IsAny<CancellationToken>()), Times.Once);
-        app.StatusClient.Verify(c => c.SetStatusAsync(app.Driver, DriverAvailabilityStatus.Busy, It.IsAny<CancellationToken>()), Times.Once);
-        app.StatusClient.Verify(c => c.SetStatusAsync(app.Driver, DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Once);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Busy, It.IsAny<CancellationToken>()), Times.Once);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Once);
         Assert.Equal(HttpStatusCode.NoContent, (await driver.GetAsync("/drivers/me/current-trip")).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await rider.GetAsync("/trips/me/current")).StatusCode);
     }
@@ -107,7 +107,7 @@ public class TripApiFlowTests
         await AssertState(await second.PostAsync($"/trips/{id}/driver-reject", null), "Failed");
         Assert.All(app.Store.Committed[id].Offers, o => Assert.Equal(OfferStatus.Rejected, o.Status));
         app.Matching.Verify(c => c.MatchAsync(It.IsAny<MatchDriverRequest>()), Times.Exactly(2));
-        app.StatusClient.Verify(c => c.SetStatusAsync(It.IsAny<Guid>(), It.IsAny<DriverAvailabilityStatus>(), It.IsAny<CancellationToken>()), Times.Never);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DriverAvailabilityStatus>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public class TripApiFlowTests
         using var rider = app.Client(app.Rider, "Rider");
         using var driver = app.Client(app.Driver, "Driver");
         var id = await Offer(app, rider);
-        app.StatusClient.Setup(c => c.SetStatusAsync(app.Driver, DriverAvailabilityStatus.Busy, It.IsAny<CancellationToken>()))
+        app.StatusClient.Setup(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Busy, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new DownstreamException(status, "MATCHING_FAILURE", "Test failure"));
         await Error(await driver.PostAsync($"/trips/{id}/driver-accept", null), (HttpStatusCode)status, "MATCHING_FAILURE");
         Assert.Equal(TripStatus.DriverAccepted, app.Store.Committed[id].Status);
@@ -234,7 +234,7 @@ public class TripApiFlowTests
         app.Store.SaveFailure = new DbUpdateConcurrencyException("Simulated conflict");
         await Error(await driver.PostAsync($"/trips/{id}/driver-accept", null), HttpStatusCode.Conflict, "CONCURRENCY_CONFLICT");
         Assert.Equal(TripStatus.DriverOffered, app.Store.Committed[id].Status);
-        app.StatusClient.Verify(c => c.SetStatusAsync(It.IsAny<Guid>(), It.IsAny<DriverAvailabilityStatus>(), It.IsAny<CancellationToken>()), Times.Never);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DriverAvailabilityStatus>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -309,11 +309,14 @@ public class TripApiFlowTests
         {
             await AssertState(await driver.PostAsync($"/trips/{id}/{action}", null), status);
             var before = JsonSerializer.Serialize(app.Store.Committed[id]);
-            await Error(await driver.PostAsync($"/trips/{id}/{action}", null), HttpStatusCode.Conflict, "INVALID_TRIP_STATE");
+            if (action == "dropoff")
+                await AssertState(await driver.PostAsync($"/trips/{id}/{action}", null), "Paid");
+            else
+                await Error(await driver.PostAsync($"/trips/{id}/{action}", null), HttpStatusCode.Conflict, "INVALID_TRIP_STATE");
             Assert.Equal(before, JsonSerializer.Serialize(app.Store.Committed[id]));
         }
         app.PaymentClient.Verify(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()), Times.Once);
-        app.StatusClient.Verify(c => c.SetStatusAsync(app.Driver, DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Once);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     private static async Task<Guid> AdvanceToPickedUp(TripApiFactory app, HttpClient rider, HttpClient driver)
@@ -341,9 +344,9 @@ public class TripApiFlowTests
         Assert.Equal(TripStatus.PaymentFailed.ToString(), detail.Status);
         Assert.Equal("PaymentPending", detail.History[^1].From);
         Assert.Equal("PaymentFailed", detail.History[^1].To);
-        app.StatusClient.Verify(c => c.SetStatusAsync(app.Driver, DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Once);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Once);
         Assert.Equal(HttpStatusCode.NoContent, (await driver.GetAsync("/drivers/me/current-trip")).StatusCode);
-        await Error(await driver.PostAsync($"/trips/{id}/dropoff", null), HttpStatusCode.Conflict, "INVALID_TRIP_STATE");
+        await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "PaymentFailed");
         app.PaymentClient.Verify(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -365,7 +368,7 @@ public class TripApiFlowTests
         await Error(await driver.PostAsync($"/trips/{id}/dropoff", null), HttpStatusCode.GatewayTimeout, PaymentErrorCodes.PaymentTimeout);
         Assert.Equal(TripStatus.PaymentPending, app.Store.Committed[id].Status);
         var pendingHistoryCount = app.Store.Committed[id].History.Count;
-        app.StatusClient.Verify(c => c.SetStatusAsync(app.Driver, DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Never);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Never);
 
         await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "Paid");
 
@@ -376,7 +379,7 @@ public class TripApiFlowTests
         app.PaymentClient.Verify(p => p.CreateAsync(
             It.Is<CreatePaymentRequest>(r => r.IdempotencyKey == expectedKey),
             It.IsAny<CancellationToken>()), Times.Exactly(2));
-        app.StatusClient.Verify(c => c.SetStatusAsync(app.Driver, DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Once);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -396,7 +399,7 @@ public class TripApiFlowTests
         await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "Paid");
 
         Assert.Equal(TripStatus.Paid, app.Store.Committed[id].Status);
-        app.StatusClient.Verify(c => c.SetStatusAsync(app.Driver, DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Once);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -406,12 +409,18 @@ public class TripApiFlowTests
         using var rider = app.Client(app.Rider, "Rider");
         using var driver = app.Client(app.Driver, "Driver");
         var id = await AdvanceToPickedUp(app, rider, driver);
-        app.StatusClient.Setup(c => c.SetStatusAsync(app.Driver, DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()))
+        app.StatusClient.Setup(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new DownstreamException(502, "MATCHING_UNAVAILABLE", "Matching down"));
 
         await Error(await driver.PostAsync($"/trips/{id}/dropoff", null), HttpStatusCode.BadGateway, "MATCHING_UNAVAILABLE");
 
         Assert.Equal(TripStatus.Paid, app.Store.Committed[id].Status);
+        var historyCount = app.Store.Committed[id].History.Count;
+        app.StatusClient.Setup(c => c.SetTripStatusAsync(app.Driver, id, DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "Paid");
+        Assert.Equal(historyCount, app.Store.Committed[id].History.Count);
+        app.PaymentClient.Verify(c => c.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -431,7 +440,7 @@ public class TripApiFlowTests
         await Error(await driver.PostAsync($"/trips/{id}/dropoff", null), HttpStatusCode.GatewayTimeout, PaymentErrorCodes.PaymentTimeout);
 
         Assert.Equal(TripStatus.PaymentPending, app.Store.Committed[id].Status);
-        app.StatusClient.Verify(c => c.SetStatusAsync(app.Driver, DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Never);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -448,6 +457,6 @@ public class TripApiFlowTests
         await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "PaymentPending");
 
         Assert.Equal(TripStatus.PaymentPending, app.Store.Committed[id].Status);
-        app.StatusClient.Verify(c => c.SetStatusAsync(app.Driver, DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Never);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Never);
     }
 }

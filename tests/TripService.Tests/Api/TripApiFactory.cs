@@ -38,7 +38,7 @@ public sealed class TripApiFactory : WebApplicationFactory<Program>
         Matching.Setup(m => m.MatchAsync(It.IsAny<MatchDriverRequest>()))
             .ReturnsAsync(new MatchDriverResult(Driver.ToString(), "Driver", "Available", 1.5,
                 new GeoPointDto(10.77, 106.69)));
-        StatusClient.Setup(m => m.SetStatusAsync(It.IsAny<Guid>(), It.IsAny<DriverAvailabilityStatus>(),
+        StatusClient.Setup(m => m.SetTripStatusAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DriverAvailabilityStatus>(),
             It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         PaymentClient.Setup(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CreatePaymentResponse(Guid.NewGuid(), PaymentState.SUCCEEDED));

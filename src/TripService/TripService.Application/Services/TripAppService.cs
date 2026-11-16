@@ -246,7 +246,7 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
     trip.AcceptOffer(driverId);
 
     await trips.SaveChangesAsync();
-    await driverStatusClient.SetStatusAsync(driverId, DriverAvailabilityStatus.Busy, cancellationToken);
+    await driverStatusClient.SetTripStatusAsync(driverId, tripId, DriverAvailabilityStatus.Busy, cancellationToken);
 
     return new TripDriverActionResponse(trip.Status.ToString());
 }
@@ -308,6 +308,13 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
 
         var trip = await GetDriverTripAsync(tripId, driverId, true);
 
+        if (trip.Status is TripStatus.Paid or TripStatus.PaymentFailed)
+        {
+            // Retry only the downstream release. Matching compares trip ownership atomically.
+            await driverStatusClient.SetTripStatusAsync(driverId, tripId, DriverAvailabilityStatus.Available, cancellationToken);
+            return new TripDriverActionResponse(trip.Status.ToString());
+        }
+
         if (trip.Status is not (TripStatus.PickedUp or TripStatus.PaymentPending))
         {
             // Delegate to Domain State Pattern to throw InvalidTripStateException (409).
@@ -339,7 +346,7 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
         }
 
         await trips.SaveChangesAsync();
-        await driverStatusClient.SetStatusAsync(driverId, DriverAvailabilityStatus.Available, cancellationToken);
+        await driverStatusClient.SetTripStatusAsync(driverId, tripId, DriverAvailabilityStatus.Available, cancellationToken);
         return new TripDriverActionResponse(trip.Status.ToString());
     }
 
@@ -388,7 +395,7 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
                 throw;
             }
 
-            if (existing.TripId != trip.Id)
+            if (existing.TripId != trip.Id || existing.Amount != paymentRequest.Amount || existing.Method != paymentRequest.Method)
             {
                 throw new DownstreamException(
                     502,

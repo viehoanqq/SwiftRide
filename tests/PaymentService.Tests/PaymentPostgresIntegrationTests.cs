@@ -23,6 +23,44 @@ public sealed class PostgresFactAttribute : FactAttribute
 public class PaymentPostgresIntegrationTests
 {
     [PostgresFact]
+    public async Task Checkout_ConcurrentReplay_ChargesOnce_AndRejectsDifferentPayload()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var request = new CreatePaymentRequest(Guid.NewGuid(),
+            Guid.Parse("11111111-0000-0000-0000-000000000001"),
+            Guid.Parse("22222222-0000-0000-0000-000000000001"),
+            50000m, SwiftRide.Contracts.Payments.PaymentMethod.WALLET, Guid.NewGuid().ToString());
+        async Task<PaymentCreationResult> Pay(CreatePaymentRequest input)
+        {
+            await using var db = database.Context();
+            var checkout = new PaymentService.Application.Services.PaymentCheckoutService(
+                new PaymentRepository(db), new AccountRepository(db), new UnitOfWork(db),
+                new PaymentService.Application.Options.PaymentOptions { DriverRate = 0.8m });
+            return await checkout.CreateAsync(input, CancellationToken.None);
+        }
+        var results = await Task.WhenAll(Pay(request), Pay(request));
+        Assert.Single(results, r => !r.IsReplay);
+        Assert.Single(results, r => r.IsReplay);
+        Assert.Equal(results[0].Response, results[1].Response);
+        var conflict = await Assert.ThrowsAsync<PaymentService.Application.Exceptions.ConflictException>(
+            () => Pay(request with { Amount = 60000m }));
+        Assert.Equal(PaymentErrorCodes.IdempotencyConflict, conflict.Code);
+        var tripConflict = await Assert.ThrowsAsync<PaymentService.Application.Exceptions.ConflictException>(
+            () => Pay(request with { IdempotencyKey = "another-key" }));
+        Assert.Equal(PaymentErrorCodes.TripPaymentExists, tripConflict.Code);
+        await using var verify = database.Context();
+        Assert.Equal(1, await verify.Payments.CountAsync());
+        Assert.Equal(3, await verify.LedgerEntries.CountAsync());
+        Assert.Equal(450000m, (await verify.Accounts.SingleAsync(a => a.OwnerId == request.RiderId.ToString())).Balance);
+        Assert.Equal(40000m, (await verify.Accounts.SingleAsync(a => a.OwnerId == request.DriverId.ToString())).Balance);
+        Assert.Equal(10000m, (await verify.Accounts.SingleAsync(a => a.OwnerId == Account.PlatformOwnerId)).Balance);
+        var insufficient = request with { TripId = Guid.NewGuid(), Amount = 900000m, IdempotencyKey = "insufficient" };
+        Assert.Equal(PaymentState.FAILED, (await Pay(insufficient)).Response.Status);
+        Assert.True((await Pay(insufficient)).IsReplay);
+        Assert.Equal(3, await verify.LedgerEntries.CountAsync());
+    }
+
+    [PostgresFact]
     public async Task UnitOfWork_PersistsPaymentBalanceAndLedgerAtomically_AndRollsBackOnError()
     {
         await using var database = await TestDatabase.CreateAsync();

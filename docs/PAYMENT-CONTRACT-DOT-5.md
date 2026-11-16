@@ -8,9 +8,19 @@ SUCCEEDED → MarkPaid(), FAILED → MarkPaymentFailed() qua State pattern. Ch�
 gửi lặp không thay đổi history/UpdatedAt; kết quả trái ngược bị chặn. PENDING không hạ trạng thái
 cuối. REFUNDED giữ nguyên Trip Paid; nếu Trip chưa Paid thì từ chối kết quả không nhất quán.
 
-Mapper chưa nối vào dropoff vì PaymentClient/workflow HTTP chưa triển khai. Người tích hợp phải
-xác minh kết quả thuộc đúng Trip, gọi mapper rồi SaveChanges. Không chuyển timeout/HTTP error
-thành kết quả FAILED. Đây là hoàn thiện quy tắc Domain/ánh xạ, không phải hoàn thiện API thu tiền.
+Mapper đã nối vào dropoff qua PaymentClient. Timeout/HTTP error chưa rõ kết quả giữ PaymentPending;
+tra lại theo TripId và kiểm tra amount/method trước khi chấp nhận kết quả cuối.
+
+Ngày 16/11: POST /payments và GET /payments/by-trip/{tripId} đã nối PaymentCheckoutService.
+Checkout hiện hỗ trợ WALLET; CARD trả 400 cho đến khi có provider/giả lập được chốt.
+PostgreSQL khóa transaction theo key và TripId trước khi đọc payment, rồi khóa các ví theo ID.
+Replay cùng payload trả 200; khác payload trả 409 IDEMPOTENCY_CONFLICT; key khác nhưng cùng chuyến
+trả 409 TRIP_PAYMENT_EXISTS. Payment, số dư, ledger commit cùng transaction.
+
+Dropoff gọi lặp trên Paid/PaymentFailed trả trạng thái hiện có và chỉ thử lại cập nhật Available,
+không gọi Payment hoặc thêm history. PUT trạng thái từ Trip gửi thêm tripId; Matching chỉ giải phóng
+tài xế khi statusTripId khớp (hoặc chưa có ở dữ liệu cũ). Release của chuyến cũ sau khi chuyến mới
+đã đặt Busy là no-op. Cần triển khai Matching cùng phiên bản với Trip để giữ bảo đảm này.
 
 Contract được chốt dựa trên entity/schema hiện tại. Đây là chữ ký và quy ước triển khai,
 không phải thông báo các API Payment đã hoạt động.

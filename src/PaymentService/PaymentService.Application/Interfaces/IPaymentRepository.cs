@@ -4,6 +4,7 @@ namespace PaymentService.Application.Interfaces;
 
 public interface IPaymentRepository
 {
+    Task LockRequestAsync(string key, Guid tripId, CancellationToken cancellationToken);
     // Tracked aggregate including Entries. No authorization decisions in the repository.
     Task<Payment?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
     Task<Payment?> GetByTripIdAsync(Guid tripId, CancellationToken cancellationToken);

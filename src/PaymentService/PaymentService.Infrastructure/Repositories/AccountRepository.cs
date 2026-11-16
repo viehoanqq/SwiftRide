@@ -9,7 +9,7 @@ namespace PaymentService.Infrastructure.Repositories;
 public sealed class AccountRepository(PayDbContext db) : IAccountRepository
 {
     public Task<Account?> GetByOwnerAsync(string ownerId, OwnerType ownerType, CancellationToken cancellationToken) =>
-        db.Accounts.FirstOrDefaultAsync(
+        db.Accounts.AsNoTracking().FirstOrDefaultAsync(
             a => a.OwnerId == ownerId && a.OwnerType == ownerType,
             cancellationToken);
 

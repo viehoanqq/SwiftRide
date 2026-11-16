@@ -67,6 +67,23 @@ public class DriverRepository(MongoContext context) : IDriverRepository
         return result.MatchedCount > 0;
     }
 
+    public async Task<bool> SetTripStatusAsync(string driverId, Guid tripId, DriverStatus status)
+    {
+        var f = Builders<DriverDocument>.Filter;
+        var filter = f.Eq(d => d.Id, driverId);
+        if (status == DriverStatus.Available)
+        {
+            // A delayed release for A must never clear Busy owned by B.
+            // Null permits finishing trips accepted before this field was deployed.
+            filter &= f.Eq(d => d.StatusTripId, tripId.ToString("D")) | f.Eq(d => d.StatusTripId, null);
+        }
+        var update = Builders<DriverDocument>.Update.Set(d => d.Status, status)
+            .Set(d => d.StatusTripId, tripId.ToString("D")).Set(d => d.UpdatedAt, DateTime.UtcNow);
+        var result = await context.Drivers.UpdateOneAsync(filter, update);
+        return result.MatchedCount > 0 ||
+            (status == DriverStatus.Available && await context.Drivers.Find(d => d.Id == driverId).AnyAsync());
+    }
+
     public async Task<Driver?> FindNearestAvailableAsync(GeoPoint pickup, double radiusKm, IReadOnlyCollection<string> excludeDriverIds)
     {
         var point = GeoJson.Point(GeoJson.Geographic(pickup.Lng, pickup.Lat));
