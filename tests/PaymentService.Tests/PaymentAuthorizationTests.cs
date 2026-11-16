@@ -25,7 +25,6 @@ public class PaymentAuthorizationTests
             Status = PaymentStatus.Succeeded
         };
 
-        // Act: Giả lập logic kiểm tra quyền sở hữu trong Controller / Authorization Handler
         bool IsUserAuthorized(Guid requestingUserId, Payment targetPayment)
         {
             return requestingUserId == targetPayment.RiderId || requestingUserId == targetPayment.DriverId;
@@ -33,7 +32,6 @@ public class PaymentAuthorizationTests
 
         bool hasAccess = IsUserAuthorized(maliciousUserId, payment);
 
-        // Assert: Kẻ tấn công có ID khác không được phép xem thông tin thanh toán của người khác
         Assert.False(hasAccess);
     }
 
@@ -45,13 +43,11 @@ public class PaymentAuthorizationTests
         var driverRole = "Driver";
         var internalEndpointRequiredRole = "InternalServiceWorker";
 
-        // Act: Giả lập kiểm tra phân quyền endpoint nội bộ (Internal APIs)
         bool CanAccessInternalApi(string userRole)
         {
             return userRole == internalEndpointRequiredRole;
         }
 
-        // Assert: Cả Rider và Driver đều không có quyền gọi API nội bộ
         Assert.False(CanAccessInternalApi(riderRole));
         Assert.False(CanAccessInternalApi(driverRole));
     }
@@ -59,11 +55,9 @@ public class PaymentAuthorizationTests
     [Fact]
     public void Gateway_BlocksExternalPostRequestsToInternalRoutes()
     {
-        // Arrange
         var gatewayRouteConfig = new { Path = "/internal/payments/process-ledger", AllowedSource = "InternalCluster" };
         var externalClientSource = "PublicInternet";
 
-        // Act: Giả lập bộ lọc YARP Gateway hoặc Middleware chặn request POST nội bộ từ bên ngoài
         bool IsGatewayRouteAllowed(string source, string routePath)
         {
             if (routePath.StartsWith("/internal/") && source != "InternalCluster")
@@ -75,7 +69,6 @@ public class PaymentAuthorizationTests
 
         bool isAllowed = IsGatewayRouteAllowed(externalClientSource, gatewayRouteConfig.Path);
 
-        // Assert: Gateway phải chặn đứng các request từ bên ngoài truy cập vào route nội bộ
         Assert.False(isAllowed);
     }
 }

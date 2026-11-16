@@ -23,7 +23,6 @@ public class TripWorkflowIntegrationTests : IDisposable
 
         using var context = new PayDbContext(_dbContextOptions);
         
-        // Khởi tạo schema SQLite phục vụ test luồng Trip & Payment
         context.Database.ExecuteSqlRaw(@"
             CREATE TABLE Accounts (
                 Id TEXT PRIMARY KEY,
@@ -69,13 +68,12 @@ public class TripWorkflowIntegrationTests : IDisposable
     [Fact]
     public async Task Trip_DropoffToPaid_RecordsHistoryAndSetsDriverAvailable()
     {
-        // Arrange
+        
         using var context = CreateContext();
         var riderId = Guid.NewGuid();
         var driverId = Guid.NewGuid();
         var tripId = Guid.NewGuid();
 
-        // Tạo ví Rider đủ tiền và ví Driver/Platform
         context.Accounts.Add(new Account { Id = Guid.NewGuid(), OwnerId = riderId.ToString(), OwnerType = OwnerType.Rider, Balance = 200000m });
         context.Accounts.Add(new Account { Id = Guid.NewGuid(), OwnerId = driverId.ToString(), OwnerType = OwnerType.Driver, Balance = 0m });
         context.Accounts.Add(new Account { Id = Guid.NewGuid(), OwnerId = Account.PlatformOwnerId, OwnerType = OwnerType.Platform, Balance = 0m });
@@ -93,7 +91,6 @@ public class TripWorkflowIntegrationTests : IDisposable
             Status = PaymentStatus.Pending
         };
 
-        // Act: Giả lập sự kiện xe đến Dropoff -> Thực hiện thanh toán thành công
         payment.CompleteWalletAttempt(200000m);
 
         context.Payments.Add(payment);
@@ -107,9 +104,9 @@ public class TripWorkflowIntegrationTests : IDisposable
         using var verifyContext = CreateContext();
         var savedPayment = await verifyContext.Payments.FirstAsync(p => p.TripId == tripId);
 
-        Assert.Equal(PaymentStatus.Succeeded, savedPayment.Status); // Kiểm tra chuyển thành Paid/Succeeded
-        Assert.True(savedPayment.AttemptCount > 0); // Kiểm tra lịch sử attempt được ghi nhận đúng
-        Assert.True(isDriverAvailableAfterTrip); // Kiểm tra tài xế đã trở lại Available
+        Assert.Equal(PaymentStatus.Succeeded, savedPayment.Status); 
+        Assert.True(savedPayment.AttemptCount > 0);
+        Assert.True(isDriverAvailableAfterTrip);
     }
 
     [Fact]
@@ -121,7 +118,6 @@ public class TripWorkflowIntegrationTests : IDisposable
         var driverId = Guid.NewGuid();
         var tripId = Guid.NewGuid();
 
-        // Tạo ví Rider KHÔNG ĐỦ TIỀN (ví dụ chỉ có 10.000 ₫ nhưng cước 50.000 ₫)
         context.Accounts.Add(new Account { Id = Guid.NewGuid(), OwnerId = riderId.ToString(), OwnerType = OwnerType.Rider, Balance = 10000m });
         await context.SaveChangesAsync();
 
@@ -137,7 +133,6 @@ public class TripWorkflowIntegrationTests : IDisposable
             Status = PaymentStatus.Pending
         };
 
-        // Act: Thanh toán thất bại do thiếu tiền
         payment.CompleteWalletAttempt(10000m);
         context.Payments.Add(payment);
         await context.SaveChangesAsync();
@@ -148,15 +143,14 @@ public class TripWorkflowIntegrationTests : IDisposable
         using var verifyContext = CreateContext();
         var savedPayment = await verifyContext.Payments.FirstAsync(p => p.TripId == tripId);
 
-        Assert.Equal(PaymentStatus.Failed, savedPayment.Status); // Kiểm tra trạng thái chuyển PaymentFailed
-        Assert.Equal("INSUFFICIENT_FUNDS", savedPayment.FailureReason); // Kiểm tra lịch sử lý do lỗi đúng
-        Assert.True(isDriverAvailableAfterTrip); // Tài xế vẫn được giải phóng về Available để nhận cuốc mới
+        Assert.Equal(PaymentStatus.Failed, savedPayment.Status); 
+        Assert.Equal("INSUFFICIENT_FUNDS", savedPayment.FailureReason);
+        Assert.True(isDriverAvailableAfterTrip);
     }
 
     [Fact]
     public async Task Trip_PaymentTimeoutAndRetry_HandledIdempotently()
     {
-        // Arrange: Giả lập trường hợp mạng timeout, client gửi lại request lặp (retry) với cùng IdempotencyKey
         using var context = CreateContext();
         var tripId = Guid.NewGuid();
         var idempotencyKey = "retry-timeout-key-99";
@@ -176,16 +170,14 @@ public class TripWorkflowIntegrationTests : IDisposable
         context.Payments.Add(initialPayment);
         await context.SaveChangesAsync();
 
-        // Act: Request retry đến lần thứ 2 với cùng IdempotencyKey do timeout mạng ở lần 1
         using var retryContext = CreateContext();
         var existingPayment = await retryContext.Payments
             .FirstOrDefaultAsync(p => p.IdempotencyKey == idempotencyKey);
 
-        // Assert: Hệ thống phát hiện trùng key, trả về kết quả cũ và không tạo bản ghi thanh toán mới hay trừ tiền đúp
         Assert.NotNull(existingPayment);
         Assert.Equal(initialPayment.Id, existingPayment.Id);
         
         int totalRecords = await retryContext.Payments.CountAsync(p => p.IdempotencyKey == idempotencyKey);
-        Assert.Equal(1, totalRecords); // Tuyệt đối chỉ có 1 giao dịch duy nhất trong DB
+        Assert.Equal(1, totalRecords); 
     }
 }

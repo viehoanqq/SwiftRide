@@ -25,7 +25,6 @@ public class PaymentDatabaseIntegrationTests : IDisposable
 
         using var context = new PayDbContext(_dbContextOptions);
         
-        // Bổ sung đầy đủ cột CreatedAt cho bảng LedgerEntries
         context.Database.ExecuteSqlRaw(@"
             CREATE TABLE Accounts (
                 Id TEXT PRIMARY KEY,
