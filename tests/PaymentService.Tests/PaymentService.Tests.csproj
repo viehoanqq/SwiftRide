@@ -8,6 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.14" />
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Moq" Version="4.21.0" />
@@ -21,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PaymentService\PaymentService.Domain\PaymentService.Domain.csproj" />
+    <ProjectReference Include="..\..\src\PaymentService\PaymentService.Api\PaymentService.Api.csproj" />
     <ProjectReference Include="..\..\src\PaymentService\PaymentService.Application\PaymentService.Application.csproj" />
     <ProjectReference Include="..\..\src\PaymentService\PaymentService.Infrastructure\PaymentService.Infrastructure.csproj" />
   </ItemGroup>

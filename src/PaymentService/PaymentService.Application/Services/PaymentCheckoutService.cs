@@ -60,19 +60,7 @@ public sealed class PaymentCheckoutService(
                 IdempotencyKey = request.IdempotencyKey, Status = PaymentStatus.Pending,
                 CreatedAt = now, UpdatedAt = now
             };
-            payment.CompleteWalletAttempt(rider.Balance);
-            if (payment.Status == PaymentStatus.Succeeded)
-            {
-                var split = MoneyRules.Split(request.Amount, options.DriverRate);
-                rider.Balance -= split.Total;
-                driver.Balance += split.DriverAmount;
-                platform.Balance += split.PlatformAmount;
-                foreach (var (account, amount) in new[] {
-                    (rider, -split.Total), (driver, split.DriverAmount), (platform, split.PlatformAmount) })
-                    payment.Entries.Add(new LedgerEntry {
-                        PaymentId = payment.Id, AccountId = account.Id,
-                        EntryType = EntryType.Charge, Amount = amount, CreatedAt = now });
-            }
+            PaymentService.Domain.Services.PaymentSettlement.ChargeWallet(payment, rider, driver, platform, options.DriverRate);
             await payments.AddAsync(payment, ct);
             return new PaymentCreationResult(new(payment.Id, State(payment.Status)), false);
         }, cancellationToken);

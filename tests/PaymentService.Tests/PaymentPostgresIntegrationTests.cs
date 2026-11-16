@@ -22,6 +22,102 @@ public sealed class PostgresFactAttribute : FactAttribute
 
 public class PaymentPostgresIntegrationTests
 {
+    private static PaymentService.Application.Services.PaymentCheckoutService Checkout(PayDbContext db) => new(
+        new PaymentRepository(db), new AccountRepository(db), new UnitOfWork(db),
+        new PaymentService.Application.Options.PaymentOptions { DriverRate = 0.75m });
+
+    private static PaymentService.Application.Services.RefundAppService Refunds(PayDbContext db) => new(
+        new PaymentRepository(db), new RefundRepository(db), new AccountRepository(db), new UnitOfWork(db));
+
+    private static CreatePaymentRequest WalletRequest() => new(Guid.NewGuid(),
+        Guid.Parse("11111111-0000-0000-0000-000000000001"),
+        Guid.Parse("22222222-0000-0000-0000-000000000001"), 50000.01m,
+        SwiftRide.Contracts.Payments.PaymentMethod.WALLET, Guid.NewGuid().ToString());
+
+    [PostgresFact]
+    public async Task Refund_ConcurrentReplay_RestoresOriginalLedger_AndQueriesEnforceOwnership()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var request = WalletRequest();
+        Guid paymentId;
+        await using (var db = database.Context())
+            paymentId = (await Checkout(db).CreateAsync(request, CancellationToken.None)).Response.PaymentId;
+
+        async Task<RefundPaymentResponse> Refund(string key, string reason)
+        {
+            await using var db = database.Context();
+            return await Refunds(db).RefundAsync(paymentId, new(reason), key, CancellationToken.None);
+        }
+        await using (var db = database.Context())
+        {
+            var reads = new PaymentService.Application.Services.PaymentAppService(Checkout(db), new PaymentRepository(db), Refunds(db));
+            var detail = await reads.GetByIdAsync(paymentId, request.RiderId, CancellationToken.None);
+            Assert.Equal(37500.01m, detail.DriverAmount);
+            Assert.Equal(12500m, detail.PlatformAmount);
+            Assert.Equal(paymentId, (await reads.GetByTripAsync(request.TripId, request.DriverId, "Driver", CancellationToken.None)).Id);
+            await Assert.ThrowsAsync<PaymentService.Application.Exceptions.ForbiddenException>(() =>
+                reads.GetByIdAsync(paymentId, Guid.NewGuid(), CancellationToken.None));
+            await Assert.ThrowsAsync<PaymentService.Application.Exceptions.ForbiddenException>(() =>
+                reads.GetByTripAsync(request.TripId, Guid.NewGuid(), "Driver", CancellationToken.None));
+            var wallets = new PaymentService.Application.Services.WalletAppService(new AccountRepository(db), new LedgerRepository(db), new UnitOfWork(db));
+            var wallet = await wallets.GetMineAsync(request.DriverId, "Driver", CancellationToken.None);
+            Assert.Equal(37500.01m, wallet.Balance);
+            Assert.Equal(37500.01m, Assert.Single(wallet.Entries).Amount);
+        }
+
+        var results = await Task.WhenAll(Refund("refund-once", "Customer request"), Refund("refund-once", "Customer request"));
+        Assert.All(results, r => Assert.Equal(PaymentState.REFUNDED, r.Status));
+        var changed = await Assert.ThrowsAsync<PaymentService.Application.Exceptions.ConflictException>(() => Refund("refund-once", "Different reason"));
+        Assert.Equal(PaymentErrorCodes.IdempotencyConflict, changed.Code);
+        var repeated = await Assert.ThrowsAsync<PaymentService.Domain.Exceptions.PaymentRuleException>(() => Refund("another-key", "Customer request"));
+        Assert.Equal(PaymentErrorCodes.RefundNotAllowed, repeated.Code);
+        await using var verify = database.Context();
+        var saved = (await new PaymentRepository(verify).GetByIdAsync(paymentId, CancellationToken.None))!;
+        Assert.Equal(PaymentStatus.Refunded, saved.Status);
+        Assert.Equal(6, saved.Entries.Count);
+        Assert.All(saved.Entries.GroupBy(e => e.AccountId), entries => Assert.Equal(0m, entries.Sum(e => e.Amount)));
+        Assert.Equal(1, await verify.RefundReceipts.CountAsync());
+        Assert.Equal(500000m, (await verify.Accounts.SingleAsync(a => a.OwnerId == request.RiderId.ToString())).Balance);
+        Assert.Equal(0m, (await verify.Accounts.SingleAsync(a => a.OwnerId == request.DriverId.ToString())).Balance);
+        Assert.Equal(0m, (await verify.Accounts.SingleAsync(a => a.OwnerId == Account.PlatformOwnerId)).Balance);
+        var walletService = new PaymentService.Application.Services.WalletAppService(new AccountRepository(verify), new LedgerRepository(verify), new UnitOfWork(verify));
+        var riderWallet = await walletService.GetMineAsync(request.RiderId, "Rider", CancellationToken.None);
+        Assert.Equal(2, riderWallet.Entries.Count);
+        Assert.Equal(500000m, riderWallet.Balance);
+        Assert.Contains(riderWallet.Entries, e => e.EntryType == LedgerEntryType.REFUND && e.Amount == request.Amount);
+    }
+
+    [PostgresFact]
+    public async Task Refund_InsufficientRecipientFunds_RollsBack_AndFailedPaymentCannotRefund()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var request = WalletRequest();
+        Guid paymentId;
+        await using (var db = database.Context())
+        {
+            paymentId = (await Checkout(db).CreateAsync(request, CancellationToken.None)).Response.PaymentId;
+            var driver = await db.Accounts.SingleAsync(a => a.OwnerId == request.DriverId.ToString());
+            driver.Balance = 0; // Simulate the recipient having spent their balance.
+            await db.SaveChangesAsync();
+        }
+        await using (var db = database.Context())
+        {
+            var ex = await Assert.ThrowsAsync<PaymentService.Domain.Exceptions.PaymentRuleException>(() =>
+                Refunds(db).RefundAsync(paymentId, new("Test"), "refund-insufficient", CancellationToken.None));
+            Assert.Equal(PaymentErrorCodes.RefundInsufficientFunds, ex.Code);
+            Assert.Empty(db.ChangeTracker.Entries());
+        }
+        await using var verify = database.Context();
+        Assert.Equal(PaymentStatus.Succeeded, (await verify.Payments.SingleAsync()).Status);
+        Assert.Equal(3, await verify.LedgerEntries.CountAsync());
+        Assert.Equal(0, await verify.RefundReceipts.CountAsync());
+        Assert.Equal(449999.99m, (await verify.Accounts.SingleAsync(a => a.OwnerId == request.RiderId.ToString())).Balance);
+        var failed = await Checkout(verify).CreateAsync(request with { TripId = Guid.NewGuid(), IdempotencyKey = "failed", Amount = 900000m }, CancellationToken.None);
+        var invalid = await Assert.ThrowsAsync<PaymentService.Domain.Exceptions.PaymentRuleException>(() =>
+            Refunds(verify).RefundAsync(failed.Response.PaymentId, new("Test"), "refund-failed", CancellationToken.None));
+        Assert.Equal(PaymentErrorCodes.RefundNotAllowed, invalid.Code);
+    }
+
     [PostgresFact]
     public async Task Checkout_ConcurrentReplay_ChargesOnce_AndRejectsDifferentPayload()
     {

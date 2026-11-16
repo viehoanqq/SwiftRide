@@ -19,6 +19,12 @@ builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<PaymentOption
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<PaymentService.Application.Interfaces.IPaymentCheckoutService,
     PaymentService.Application.Services.PaymentCheckoutService>();
+builder.Services.AddScoped<PaymentService.Application.Interfaces.IPaymentAppService,
+    PaymentService.Application.Services.PaymentAppService>();
+builder.Services.AddScoped<PaymentService.Application.Interfaces.IRefundAppService,
+    PaymentService.Application.Services.RefundAppService>();
+builder.Services.AddScoped<PaymentService.Application.Interfaces.IWalletAppService,
+    PaymentService.Application.Services.WalletAppService>();
 builder.Services.AddPaymentSecurity(builder.Configuration);
 builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
 {

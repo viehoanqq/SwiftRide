@@ -1,5 +1,16 @@
 # Contract Payment – đợt 5
 
+## Truy vấn, ví và hoàn tiền (16/11)
+
+- `GET /payments/{id}`: Rider sở hữu payment; Driver không được dùng endpoint này.
+- `GET /payments/by-trip/{tripId}`: RiderId/DriverId phải khớp payment; service có scope `payments:read` được tra cứu để đối soát.
+- `GET /wallets/me`: lấy user ID và role từ JWT, trả balance và ledger của đúng account, sắp xếp thời gian/ID giảm dần. Tiền âm là trừ, tiền dương là cộng. Account chưa tồn tại trả `404 ACCOUNT_NOT_FOUND`; không tự cấp số dư cho user mới.
+- `POST /payments/{id}/refund`: gọi trực tiếp Payment, token `sub=trip-service` có scope `payments:refund`; Gateway trả 403. Body `{ "reason": "Customer request" }`, header `Idempotency-Key` bắt buộc.
+- Cùng refund key/payment/reason đã trim trả kết quả cũ; khác payload trả `409 IDEMPOTENCY_CONFLICT`. Key khác cho payment đã refund trả `409 REFUND_NOT_ALLOWED`.
+- Refund khóa key/payment và các account trong transaction, đảo ba CHARGE gốc; giữ nguyên CHARGE, thêm REFUND. Không tính lại DriverRate. Thiếu tiền ở Driver/Platform trả `409 REFUND_INSUFFICIENT_FUNDS`, không thay đổi dữ liệu.
+- Domain `PaymentSettlement` chịu trách nhiệm kiểm tra account, số dư, tính chia tiền, đổi trạng thái và tạo ledger. Application chỉ điều phối repository/transaction. CARD domain nhận kết quả dứt khoát từ provider; HTTP checkout CARD vẫn bị chặn cho đến khi tích hợp provider, không coi timeout là CARD_DECLINED.
+- Migration `AddRefundReceipts` đã có; Payment tự áp dụng khi khởi động. Không cần migration mới cho phần này.
+
 ## Cập nhật: ánh xạ kết quả sang Trip
 
 `PaymentResultMapping.Apply(trip, response.Status)` ở Trip.Application đã triển khai:
