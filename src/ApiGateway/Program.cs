@@ -24,19 +24,16 @@ app.Use(async (context, next) =>
              string.Equals(segments[0], "payments", StringComparison.OrdinalIgnoreCase)) ||
             (segments.Length == 3 &&
              string.Equals(segments[0], "payments", StringComparison.OrdinalIgnoreCase) &&
-             string.Equals(segments[2], "refund", StringComparison.OrdinalIgnoreCase)) ||
-            (segments.Length == 3 &&
-             string.Equals(segments[0], "trips", StringComparison.OrdinalIgnoreCase) &&
-             string.Equals(segments[2], "dropoff", StringComparison.OrdinalIgnoreCase))
+             string.Equals(segments[2], "refund", StringComparison.OrdinalIgnoreCase))
         );
 
     if (isBlockedPost)
     {
-        context.Response.StatusCode = StatusCodes.Status501NotImplemented;
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
         await context.Response.WriteAsJsonAsync(new
         {
-            code = "ENDPOINT_DISABLED",
-            message = "API này hiện chưa được bật."
+            code = "INTERNAL_ENDPOINT_ONLY",
+            message = "API này chỉ dành cho giao tiếp nội bộ giữa các service."
         });
         return;
     }
