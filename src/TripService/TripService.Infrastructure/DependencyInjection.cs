@@ -41,6 +41,20 @@ public static class DependencyInjection
             client.Timeout = Timeout.InfiniteTimeSpan;
         }).AddHttpMessageHandler<ServiceAuthorizationHandler>();
 
+        var paymentServiceUrl = configuration["Services:PaymentService"];
+        if (!Uri.TryCreate(paymentServiceUrl, UriKind.Absolute, out var paymentServiceUri) ||
+            (paymentServiceUri.Scheme != Uri.UriSchemeHttp && paymentServiceUri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new InvalidOperationException(
+                "Configuration 'Services:PaymentService' must be an absolute HTTP or HTTPS URL.");
+        }
+
+        services.AddHttpClient<IPaymentClient, PaymentClient>(client =>
+        {
+            client.BaseAddress = paymentServiceUri;
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        }).AddHttpMessageHandler<ServiceAuthorizationHandler>();
+
         return services;
     }
 

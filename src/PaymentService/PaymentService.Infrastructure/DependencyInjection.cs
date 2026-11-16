@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using PaymentService.Application.Interfaces;
 using PaymentService.Infrastructure.Persistence;
+using PaymentService.Infrastructure.Repositories;
 
 namespace PaymentService.Infrastructure;
 
@@ -15,6 +17,12 @@ public static class DependencyInjection
         services.AddDbContext<PayDbContext>(options =>
             options.UseNpgsql(connection, npgsql => npgsql.CommandTimeout(30))
                 .UseSnakeCaseNamingConvention());
+
+        services.AddScoped<IAccountRepository, AccountRepository>();
+        services.AddScoped<IPaymentRepository, PaymentRepository>();
+        services.AddScoped<ILedgerRepository, LedgerRepository>();
+        services.AddScoped<IRefundRepository, RefundRepository>();
+        services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         return services;
     }
