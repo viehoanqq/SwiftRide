@@ -22,6 +22,43 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("PaymentService.Application.DTOs.RefundReceipt", b =>
+                {
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("PaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("payment_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("Response")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("status");
+
+                    b.HasKey("IdempotencyKey")
+                        .HasName("pk_refund_receipts");
+
+                    b.HasIndex("PaymentId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_refund_receipts_payment_id");
+
+                    b.ToTable("refund_receipts", (string)null);
+                });
+
             modelBuilder.Entity("PaymentService.Domain.Entities.Account", b =>
                 {
                     b.Property<Guid>("Id")
@@ -312,6 +349,16 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                         .HasName("pk_processed_messages");
 
                     b.ToTable("processed_messages", (string)null);
+                });
+
+            modelBuilder.Entity("PaymentService.Application.DTOs.RefundReceipt", b =>
+                {
+                    b.HasOne("PaymentService.Domain.Entities.Payment", null)
+                        .WithOne()
+                        .HasForeignKey("PaymentService.Application.DTOs.RefundReceipt", "PaymentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_refund_receipts_payments_payment_id");
                 });
 
             modelBuilder.Entity("PaymentService.Domain.Entities.LedgerEntry", b =>

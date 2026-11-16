@@ -4,6 +4,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
+using SwiftRide.Contracts.Payments;
 
 namespace TripService.Infrastructure.Clients;
 
@@ -14,7 +15,13 @@ public sealed class ServiceAuthorizationHandler(IConfiguration configuration) : 
     {
         var jwt = configuration.GetSection("Jwt");
         var token = new JwtSecurityToken(jwt["Issuer"], jwt["Audience"],
-            new[] { new Claim("sub", "trip-service"), new Claim("scope", "drivers:status") },
+            new[]
+            {
+                new Claim("sub", PaymentProtocol.ServiceSubject),
+                new Claim("scope", "drivers:status"),
+                new Claim("scope", PaymentProtocol.CreateScope),
+                new Claim("scope", PaymentProtocol.ReadScope)
+            },
             expires: DateTime.UtcNow.AddMinutes(2),
             signingCredentials: new SigningCredentials(
                 new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["Key"]!)),

@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PaymentService\PaymentService.Domain\PaymentService.Domain.csproj" />
     <ProjectReference Include="..\..\src\PaymentService\PaymentService.Application\PaymentService.Application.csproj" />
+    <ProjectReference Include="..\..\src\PaymentService\PaymentService.Infrastructure\PaymentService.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
