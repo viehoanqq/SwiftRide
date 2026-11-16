@@ -55,6 +55,9 @@ export default function RiderHomePage() {
           </p>
         )
         : !checking && !error && <p><Link to="/rider/book">Đặt chuyến xe</Link></p>}
+      <p>
+        <Link to="/wallet">Ví của tôi</Link>
+      </p>
       <button type="button" onClick={logout}>Đăng xuất</button>
     </main>
   );

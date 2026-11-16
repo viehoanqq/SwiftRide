@@ -57,7 +57,7 @@ public class PaymentRulesTests
         Assert.Equal(expected, payment.Status);
         Assert.Equal(1, payment.AttemptCount);
         Assert.Equal(expected == PaymentStatus.Failed ? "INSUFFICIENT_FUNDS" : null, payment.FailureReason);
-        Assert.Empty(payment.Entries); // No partial ledger is created by an outcome decision.
+        Assert.Empty(payment.Entries); 
         Assert.Throws<PaymentRuleException>(() => payment.CompleteWalletAttempt(balance));
         Assert.Equal(1, payment.AttemptCount);
     }

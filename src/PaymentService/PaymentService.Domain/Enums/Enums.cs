@@ -25,5 +25,6 @@ public enum PaymentMethodType
 public enum EntryType
 {
     Charge,
-    Refund
+    Refund,
+    TopUp
 }
