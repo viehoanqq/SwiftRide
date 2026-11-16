@@ -46,11 +46,10 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(10)")
                         .HasColumnName("owner_type");
 
-                    b.Property<uint>("Version")
+                    b.Property<long>("Version")
                         .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("xid")
-                        .HasColumnName("xmin");
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
 
                     b.HasKey("Id")
                         .HasName("pk_accounts");
@@ -68,7 +67,7 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                             Balance = 0m,
                             OwnerId = "PLATFORM",
                             OwnerType = "PLATFORM",
-                            Version = 0u
+                            Version = 0L
                         },
                         new
                         {
@@ -76,7 +75,7 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                             Balance = 0m,
                             OwnerId = "GATEWAY",
                             OwnerType = "GATEWAY",
-                            Version = 0u
+                            Version = 0L
                         },
                         new
                         {
@@ -84,7 +83,7 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                             Balance = 500000m,
                             OwnerId = "11111111-0000-0000-0000-000000000001",
                             OwnerType = "RIDER",
-                            Version = 0u
+                            Version = 0L
                         },
                         new
                         {
@@ -92,7 +91,7 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                             Balance = 20000m,
                             OwnerId = "11111111-0000-0000-0000-000000000002",
                             OwnerType = "RIDER",
-                            Version = 0u
+                            Version = 0L
                         },
                         new
                         {
@@ -100,7 +99,7 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                             Balance = 0m,
                             OwnerId = "22222222-0000-0000-0000-000000000001",
                             OwnerType = "DRIVER",
-                            Version = 0u
+                            Version = 0L
                         },
                         new
                         {
@@ -108,7 +107,7 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                             Balance = 0m,
                             OwnerId = "22222222-0000-0000-0000-000000000002",
                             OwnerType = "DRIVER",
-                            Version = 0u
+                            Version = 0L
                         },
                         new
                         {
@@ -116,7 +115,7 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                             Balance = 0m,
                             OwnerId = "22222222-0000-0000-0000-000000000003",
                             OwnerType = "DRIVER",
-                            Version = 0u
+                            Version = 0L
                         },
                         new
                         {
@@ -124,7 +123,7 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                             Balance = 0m,
                             OwnerId = "22222222-0000-0000-0000-000000000004",
                             OwnerType = "DRIVER",
-                            Version = 0u
+                            Version = 0L
                         },
                         new
                         {
@@ -132,7 +131,7 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                             Balance = 0m,
                             OwnerId = "22222222-0000-0000-0000-000000000005",
                             OwnerType = "DRIVER",
-                            Version = 0u
+                            Version = 0L
                         });
                 });
 

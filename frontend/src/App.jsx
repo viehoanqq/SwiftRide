@@ -8,6 +8,7 @@ import DriverTripPage from './pages/Driver/DriverTripPage';
 import RiderHomePage from './pages/Rider/RiderHomePage';
 import BookPage from './pages/Rider/BookPage';
 import TripPage from './pages/Rider/TripPage';
+import WalletPage from './pages/WalletPage';
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/wallet" element={<ProtectedRoute><WalletPage /></ProtectedRoute>} />
           <Route path="/rider" element={<ProtectedRoute role="Rider"><RiderHomePage /></ProtectedRoute>} />
           <Route path="/rider/book" element={<ProtectedRoute role="Rider"><BookPage /></ProtectedRoute>} />
           <Route path="/rider/trips/:id" element={<ProtectedRoute role="Rider"><TripPage /></ProtectedRoute>} />

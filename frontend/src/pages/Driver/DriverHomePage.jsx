@@ -32,16 +32,16 @@ export default function DriverHomePage() {
     } catch (err) {
       setActionError(getErrorMessage(err));
     } finally {
-      // Also reload after errors: Trip may have committed before Matching failed.
       await refresh();
       locked.current = false;
       setBusy('');
     }
   };
-
+  
   return <main>
     <h1>Driver — {user.name}</h1>
     <p>Lời mời tự cập nhật mỗi 3 giây.</p>
+    <Link to="/wallet">Ví của tôi</Link>{' '}
     <button type="button" disabled={!!busy} onClick={refresh}>Tải lại</button>{' '}
     <button type="button" disabled={!!busy} onClick={logout}>Đăng xuất</button>
     {loading && <p>Đang tải...</p>}

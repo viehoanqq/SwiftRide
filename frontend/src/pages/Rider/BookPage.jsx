@@ -58,7 +58,10 @@ export default function BookPage() {
           {loading ? 'Đang tìm báo giá...' : 'Đặt xe'}
         </button>
       </form>
-      <p><Link to="/rider">Về trang Rider</Link></p>
-    </main>
+        <p>
+          <Link to="/wallet">Ví của tôi</Link>{' | '}
+          <Link to="/rider" state={{ showHome: true }}>Về trang Rider</Link>
+        </p>
+      </main>
   );
 }
