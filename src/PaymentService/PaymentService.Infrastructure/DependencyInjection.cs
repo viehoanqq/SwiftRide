@@ -1,11 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using PaymentService.Application.Interfaces;
 using PaymentService.Infrastructure.Persistence;
 using PaymentService.Application.Interfaces;
 using PaymentService.Infrastructure.Persistence.Repositories;
 using PaymentService.Application.Services;
 using PaymentService.Infrastructure.Services;
+using PaymentService.Infrastructure.Repositories;
+
 namespace PaymentService.Infrastructure;
 
 public static class DependencyInjection
@@ -25,6 +28,11 @@ public static class DependencyInjection
         services.AddScoped<IRefundRepository, RefundRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IPaymentGateway, PaymentGateway>();
+        services.AddScoped<IPaymentRepository, PaymentRepository>();
+        services.AddScoped<ILedgerRepository, LedgerRepository>();
+        services.AddScoped<IRefundRepository, RefundRepository>();
+        services.AddScoped<IUnitOfWork, UnitOfWork>();
+
         return services;
     }
 

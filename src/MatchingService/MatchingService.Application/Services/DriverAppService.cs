@@ -37,7 +37,10 @@ public class DriverAppService(IDriverRepository driverRepository)
             throw new ValidationException($"Trạng thái '{request?.Status}' không hợp lệ. Các trạng thái hợp lệ: {string.Join(", ", Enum.GetNames<DriverStatus>())}");
         }
 
-        var updated = await driverRepository.SetStatusAsync(driverId, parsedStatus);
+        if (request!.TripId == Guid.Empty) throw new ValidationException("TripId is invalid.");
+        var updated = request.TripId is Guid tripId
+            ? await driverRepository.SetTripStatusAsync(driverId, tripId, parsedStatus)
+            : await driverRepository.SetStatusAsync(driverId, parsedStatus);
         if (!updated)
         {
             throw new NotFoundException("DRIVER_NOT_FOUND", $"Không tìm thấy tài xế với ID {driverId}");

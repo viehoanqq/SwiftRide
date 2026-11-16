@@ -1,5 +1,16 @@
 # Contract Payment – đợt 5
 
+## Truy vấn, ví và hoàn tiền (16/11)
+
+- `GET /payments/{id}`: Rider sở hữu payment; Driver không được dùng endpoint này.
+- `GET /payments/by-trip/{tripId}`: RiderId/DriverId phải khớp payment; service có scope `payments:read` được tra cứu để đối soát.
+- `GET /wallets/me`: lấy user ID và role từ JWT, trả balance và ledger của đúng account, sắp xếp thời gian/ID giảm dần. Tiền âm là trừ, tiền dương là cộng. Account chưa tồn tại trả `404 ACCOUNT_NOT_FOUND`; không tự cấp số dư cho user mới.
+- `POST /payments/{id}/refund`: gọi trực tiếp Payment, token `sub=trip-service` có scope `payments:refund`; Gateway trả 403. Body `{ "reason": "Customer request" }`, header `Idempotency-Key` bắt buộc.
+- Cùng refund key/payment/reason đã trim trả kết quả cũ; khác payload trả `409 IDEMPOTENCY_CONFLICT`. Key khác cho payment đã refund trả `409 REFUND_NOT_ALLOWED`.
+- Refund khóa key/payment và các account trong transaction, đảo ba CHARGE gốc; giữ nguyên CHARGE, thêm REFUND. Không tính lại DriverRate. Thiếu tiền ở Driver/Platform trả `409 REFUND_INSUFFICIENT_FUNDS`, không thay đổi dữ liệu.
+- Domain `PaymentSettlement` chịu trách nhiệm kiểm tra account, số dư, tính chia tiền, đổi trạng thái và tạo ledger. Application chỉ điều phối repository/transaction. CARD domain nhận kết quả dứt khoát từ provider; HTTP checkout CARD vẫn bị chặn cho đến khi tích hợp provider, không coi timeout là CARD_DECLINED.
+- Migration `AddRefundReceipts` đã có; Payment tự áp dụng khi khởi động. Không cần migration mới cho phần này.
+
 ## Cập nhật: ánh xạ kết quả sang Trip
 
 `PaymentResultMapping.Apply(trip, response.Status)` ở Trip.Application đã triển khai:
@@ -8,9 +19,19 @@ SUCCEEDED → MarkPaid(), FAILED → MarkPaymentFailed() qua State pattern. Ch�
 gửi lặp không thay đổi history/UpdatedAt; kết quả trái ngược bị chặn. PENDING không hạ trạng thái
 cuối. REFUNDED giữ nguyên Trip Paid; nếu Trip chưa Paid thì từ chối kết quả không nhất quán.
 
-Mapper chưa nối vào dropoff vì PaymentClient/workflow HTTP chưa triển khai. Người tích hợp phải
-xác minh kết quả thuộc đúng Trip, gọi mapper rồi SaveChanges. Không chuyển timeout/HTTP error
-thành kết quả FAILED. Đây là hoàn thiện quy tắc Domain/ánh xạ, không phải hoàn thiện API thu tiền.
+Mapper đã nối vào dropoff qua PaymentClient. Timeout/HTTP error chưa rõ kết quả giữ PaymentPending;
+tra lại theo TripId và kiểm tra amount/method trước khi chấp nhận kết quả cuối.
+
+Ngày 16/11: POST /payments và GET /payments/by-trip/{tripId} đã nối PaymentCheckoutService.
+Checkout hiện hỗ trợ WALLET; CARD trả 400 cho đến khi có provider/giả lập được chốt.
+PostgreSQL khóa transaction theo key và TripId trước khi đọc payment, rồi khóa các ví theo ID.
+Replay cùng payload trả 200; khác payload trả 409 IDEMPOTENCY_CONFLICT; key khác nhưng cùng chuyến
+trả 409 TRIP_PAYMENT_EXISTS. Payment, số dư, ledger commit cùng transaction.
+
+Dropoff gọi lặp trên Paid/PaymentFailed trả trạng thái hiện có và chỉ thử lại cập nhật Available,
+không gọi Payment hoặc thêm history. PUT trạng thái từ Trip gửi thêm tripId; Matching chỉ giải phóng
+tài xế khi statusTripId khớp (hoặc chưa có ở dữ liệu cũ). Release của chuyến cũ sau khi chuyến mới
+đã đặt Busy là no-op. Cần triển khai Matching cùng phiên bản với Trip để giữ bảo đảm này.
 
 Contract được chốt dựa trên entity/schema hiện tại. Đây là chữ ký và quy ước triển khai,
 không phải thông báo các API Payment đã hoạt động.

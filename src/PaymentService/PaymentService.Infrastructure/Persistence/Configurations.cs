@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using PaymentService.Application.DTOs;
 using PaymentService.Domain.Entities;
 using PaymentService.Infrastructure.Messaging;
+using SwiftRide.Contracts.Payments;
 
 namespace PaymentService.Infrastructure.Persistence;
 
@@ -91,5 +93,28 @@ public class ProcessedMessageConfiguration : IEntityTypeConfiguration<ProcessedM
     public void Configure(EntityTypeBuilder<ProcessedMessage> builder)
     {
         builder.HasKey(m => m.MessageId);
+    }
+}
+
+public class RefundReceiptConfiguration : IEntityTypeConfiguration<RefundReceipt>
+{
+    public void Configure(EntityTypeBuilder<RefundReceipt> builder)
+    {
+        builder.HasKey(r => r.IdempotencyKey);
+        builder.Property(r => r.IdempotencyKey).HasMaxLength(100).IsRequired();
+        builder.Property(r => r.Reason).HasMaxLength(500).IsRequired();
+        builder.Property(r => r.Response)
+            .HasConversion(
+                v => v.Status.ToString().ToUpperInvariant(),
+                v => new RefundPaymentResponse(Enum.Parse<PaymentState>(v, true)))
+            .HasColumnName("status")
+            .HasMaxLength(10)
+            .IsRequired();
+        builder.HasIndex(r => r.PaymentId).IsUnique();
+
+        builder.HasOne<Payment>()
+            .WithOne()
+            .HasForeignKey<RefundReceipt>(r => r.PaymentId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

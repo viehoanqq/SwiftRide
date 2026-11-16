@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
+using SwiftRide.Contracts.Payments;
 using TripService.Application.DTOs;
 using TripService.Application.Interfaces;
 using TripService.Domain.Entities;
@@ -27,6 +28,7 @@ public sealed class TripApiFactory : WebApplicationFactory<Program>
     public Guid SecondDriver { get; } = Guid.NewGuid();
     public Mock<IMatchingClient> Matching { get; } = new();
     public Mock<IDriverStatusClient> StatusClient { get; } = new();
+    public Mock<IPaymentClient> PaymentClient { get; } = new();
     public TripStore Store { get; } = new();
 
     public TripApiFactory()
@@ -36,8 +38,10 @@ public sealed class TripApiFactory : WebApplicationFactory<Program>
         Matching.Setup(m => m.MatchAsync(It.IsAny<MatchDriverRequest>()))
             .ReturnsAsync(new MatchDriverResult(Driver.ToString(), "Driver", "Available", 1.5,
                 new GeoPointDto(10.77, 106.69)));
-        StatusClient.Setup(m => m.SetStatusAsync(It.IsAny<Guid>(), It.IsAny<DriverAvailabilityStatus>(),
+        StatusClient.Setup(m => m.SetTripStatusAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DriverAvailabilityStatus>(),
             It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        PaymentClient.Setup(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CreatePaymentResponse(Guid.NewGuid(), PaymentState.SUCCEEDED));
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -53,10 +57,12 @@ public sealed class TripApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<ITripRepository>();
             services.RemoveAll<IMatchingClient>();
             services.RemoveAll<IDriverStatusClient>();
+            services.RemoveAll<IPaymentClient>();
             services.AddSingleton(Store);
             services.AddScoped<ITripRepository, MemoryTripRepository>();
             services.AddSingleton(Matching.Object);
             services.AddSingleton(StatusClient.Object);
+            services.AddSingleton(PaymentClient.Object);
         });
     }
 

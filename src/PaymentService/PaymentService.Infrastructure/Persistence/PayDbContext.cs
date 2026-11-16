@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PaymentService.Application.DTOs;
 using PaymentService.Domain.Entities;
 using PaymentService.Infrastructure.Messaging;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +13,7 @@ public class PayDbContext(DbContextOptions<PayDbContext> options) : DbContext(op
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
+    public DbSet<RefundReceipt> RefundReceipts => Set<RefundReceipt>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<ProcessedMessage> ProcessedMessages => Set<ProcessedMessage>();
 

@@ -9,6 +9,7 @@ public enum DriverAvailabilityStatus
 /// <summary>Contract for synchronizing a driver's status with Matching Service.</summary>
 public interface IDriverStatusClient
 {
+    Task SetTripStatusAsync(Guid driverId, Guid tripId, DriverAvailabilityStatus status, CancellationToken cancellationToken);
     /// <summary>PUT /drivers/{id}/status with the requested status.</summary>
     Task SetStatusAsync(
         Guid driverId,
