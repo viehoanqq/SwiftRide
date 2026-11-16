@@ -18,6 +18,13 @@ public class UserRepository(UserDbContext db) : IUserRepository
     public async Task AddAsync(User user)
     {
         db.Users.Add(user);
+        db.OutboxMessages.Add(new OutboxMessage
+        {
+            Id = Guid.NewGuid(), Type = nameof(UserRegistered), CorrelationId = user.Id,
+            Payload = JsonSerializer.Serialize(new UserRegistered(user.Id,
+                user.RoleId == Role.DriverId ? "Driver" : "Rider")),
+            OccurredAt = DateTime.UtcNow
+        });
         if (user.RoleId == Role.DriverId)
         {
             db.OutboxMessages.Add(new OutboxMessage

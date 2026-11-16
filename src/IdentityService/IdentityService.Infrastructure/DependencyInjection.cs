@@ -26,6 +26,13 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(10);
         }).AddHttpMessageHandler<ServiceAuthorizationHandler>();
         services.AddHostedService<DriverRegistrationWorker>();
+        services.AddTransient<WalletAuthorizationHandler>();
+        services.AddHttpClient("WalletRegistration", client =>
+        {
+            client.BaseAddress = new Uri(configuration["Services:PaymentService"]!);
+            client.Timeout = TimeSpan.FromSeconds(10);
+        }).AddHttpMessageHandler<WalletAuthorizationHandler>();
+        services.AddHostedService<WalletRegistrationWorker>();
         return services;
     }
 

@@ -38,6 +38,18 @@ public sealed class AccountRepository(PayDbContext db) : IAccountRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task EnsureUserAccountAsync(Guid userId, OwnerType ownerType, CancellationToken cancellationToken)
+    {
+        var owner = userId.ToString("D");
+        var type = ownerType.ToString().ToUpperInvariant();
+        // One atomic statement: redelivery/concurrent calls never reset an existing balance.
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO accounts (id, owner_id, owner_type, balance)
+            VALUES ({Guid.NewGuid()}, {owner}, {type}, 0)
+            ON CONFLICT (owner_id, owner_type) DO NOTHING
+            """, cancellationToken);
+    }
+
     public Task AddAsync(Account account, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(account);

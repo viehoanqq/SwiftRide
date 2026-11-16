@@ -1,3 +1,4 @@
+using SwiftRide.Contracts.Events;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
@@ -20,6 +21,26 @@ namespace PaymentService.Tests;
 
 public class PaymentReadApiTests
 {
+    [Theory]
+    [InlineData("identity-wallet", "Driver", 204)]
+    [InlineData("identity-wallet", "Rider", 204)]
+    [InlineData("identity-wallet", "Platform", 400)]
+    [InlineData("Rider", "Rider", 403)]
+    [InlineData("Driver", "Driver", 403)]
+    [InlineData("service-create", "Rider", 403)]
+    [InlineData("anonymous", "Rider", 401)]
+    public async Task WalletRegistration_RequiresIdentityScope_AndValidRole(string identity, string role, int expected)
+    {
+        using var app = new PaymentReadFactory();
+        using var client = app.CreateClient();
+        if (identity != "anonymous") client.DefaultRequestHeaders.Authorization = new("Bearer", app.Token(identity));
+        using var response = await client.PutAsJsonAsync($"/internal/accounts/users/{app.UserId}", new UserRegistered(app.UserId, role));
+        Assert.Equal((HttpStatusCode)expected, response.StatusCode);
+        app.Accounts.Verify(a => a.EnsureUserAccountAsync(app.UserId,
+            It.IsAny<PaymentService.Domain.Enums.OwnerType>(), It.IsAny<CancellationToken>()),
+            expected == 204 ? Times.Once() : Times.Never());
+    }
+
     [Theory]
     [InlineData("service-create", false, 201)]
     [InlineData("service-create", true, 200)]
@@ -92,6 +113,7 @@ internal sealed class PaymentReadFactory : WebApplicationFactory<Program>
     public Guid PaymentId { get; } = Guid.NewGuid();
     public Guid TripId { get; } = Guid.NewGuid();
     public Mock<IPaymentAppService> Payments { get; } = new();
+    public Mock<IAccountRepository> Accounts { get; } = new();
     public Mock<IWalletAppService> Wallets { get; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -114,13 +136,16 @@ internal sealed class PaymentReadFactory : WebApplicationFactory<Program>
                 options.TokenValidationParameters.IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Key));
             });
             services.RemoveAll<IPaymentAppService>(); services.AddSingleton(Payments.Object);
+            services.RemoveAll<IAccountRepository>(); services.AddSingleton(Accounts.Object);
             services.RemoveAll<IWalletAppService>(); services.AddSingleton(Wallets.Object);
         });
     }
 
     public string Token(string identity)
     {
-        var claims = identity.StartsWith("service-")
+        var claims = identity == "identity-wallet"
+            ? new[] { new Claim("sub", WalletRegistrationProtocol.Subject), new Claim("scope", WalletRegistrationProtocol.Scope) }
+            : identity.StartsWith("service-")
             ? new[] { new Claim("sub", PaymentProtocol.ServiceSubject), new Claim("scope", identity == "service-refund" ? PaymentProtocol.RefundScope : PaymentProtocol.CreateScope) }
             : new[] { new Claim("sub", UserId.ToString()), new Claim("role", identity) };
         return new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken("payment-tests", "payment-tests", claims,

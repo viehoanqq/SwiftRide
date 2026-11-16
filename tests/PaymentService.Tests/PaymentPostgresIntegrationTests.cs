@@ -406,6 +406,33 @@ public class PaymentPostgresIntegrationTests
         Assert.Equal(50000m, saved.Balance);
     }
 
+    [PostgresFact]
+    public async Task Registration_ConcurrentDelivery_CreatesZeroBalance_AndPreservesExistingMoney()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var userId = Guid.NewGuid();
+        async Task Register()
+        {
+            await using var db = database.Context();
+            var service = new PaymentService.Application.Services.AccountRegistrationService(new AccountRepository(db));
+            await service.RegisterAsync(userId, new(userId, "Rider"), CancellationToken.None);
+        }
+        await Task.WhenAll(Register(), Register(), Register());
+        Guid accountId;
+        await using (var db = database.Context())
+        {
+            var account = Assert.Single(await db.Accounts.Where(a => a.OwnerId == userId.ToString()).ToListAsync());
+            Assert.Equal(0m, account.Balance);
+            accountId = account.Id;
+            account.Balance = 12345m;
+            await db.SaveChangesAsync();
+        }
+        await Register();
+        await using var verify = database.Context();
+        Assert.Equal(12345m, (await verify.Accounts.SingleAsync(a => a.Id == accountId)).Balance);
+        Assert.Empty(await verify.LedgerEntries.Where(e => e.AccountId == accountId).ToListAsync());
+    }
+
     private sealed class TestDatabase : IAsyncDisposable
     {
         private readonly string adminConnection;

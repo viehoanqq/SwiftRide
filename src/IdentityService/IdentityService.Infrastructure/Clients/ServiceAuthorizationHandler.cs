@@ -7,14 +7,16 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace IdentityService.Infrastructure.Clients;
 
-public sealed class ServiceAuthorizationHandler(IConfiguration configuration) : DelegatingHandler
+public class ServiceAuthorizationHandler(IConfiguration configuration) : DelegatingHandler
 {
+    protected virtual string Scope => "drivers:register";
+
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var jwt = configuration.GetSection("Jwt");
         var token = new JwtSecurityToken(jwt["Issuer"], jwt["Audience"],
-            new[] { new Claim("sub", "identity-service"), new Claim("scope", "drivers:register") },
+            new[] { new Claim("sub", "identity-service"), new Claim("scope", Scope) },
             expires: DateTime.UtcNow.AddMinutes(2),
             signingCredentials: new SigningCredentials(
                 new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["Key"]!)),

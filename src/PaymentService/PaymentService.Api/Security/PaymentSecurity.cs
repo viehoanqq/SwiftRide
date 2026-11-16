@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using SwiftRide.Contracts.Events;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -60,6 +61,10 @@ public static class PaymentSecurity
                 .RequireAssertion(c => IsService(c.User, PaymentProtocol.ReadScope)));
             options.AddPolicy(PaymentProtocol.RefundPolicy, p => p.RequireAuthenticatedUser()
                 .RequireAssertion(c => IsService(c.User, PaymentProtocol.RefundScope)));
+            options.AddPolicy(WalletRegistrationProtocol.Policy, p => p.RequireAuthenticatedUser()
+                .RequireAssertion(c => c.User.FindFirstValue("sub") == WalletRegistrationProtocol.Subject &&
+                    c.User.FindAll("scope").Any(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                        .Contains(WalletRegistrationProtocol.Scope))));
             options.AddPolicy(RiderPolicy, p => p.RequireAuthenticatedUser()
                 .RequireAssertion(c => IsUser(c.User) && c.User.IsInRole("Rider")));
             options.AddPolicy(WalletPolicy, p => p.RequireAuthenticatedUser().RequireAssertion(c => IsUser(c.User)));

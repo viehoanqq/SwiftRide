@@ -10,5 +10,6 @@ public interface IAccountRepository
     // Return tracked entities. Caller must check that every requested account exists.
     Task<IReadOnlyList<Account>> GetForUpdateAsync(
         IReadOnlyCollection<Guid> accountIds, CancellationToken cancellationToken);
+    Task EnsureUserAccountAsync(Guid userId, OwnerType ownerType, CancellationToken cancellationToken);
     Task AddAsync(Account account, CancellationToken cancellationToken);
 }
