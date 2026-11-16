@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Mvc;
 using TripService.Application.DTOs;
 using TripService.Application.Services;
 using TripService.Application.Interfaces;
-using TripService.Domain.Enums;
 using TripService.Application.Exceptions;
 namespace TripService.Api.Controllers;
 
@@ -49,24 +48,9 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     [Authorize(Roles = "Rider")]
     public async Task<IActionResult> Confirm(Guid id, [FromBody] ConfirmTripRequest request, CancellationToken cancellationToken)
     {
-        // Nếu rider từ chối giá -> Hủy chuyến
-        if (!request.Accept)
-        {
-            await tripWorkflow.CancelTripAsync(id, cancellationToken);
-            return Ok(new { status = "Cancelled", message = "Rider đã từ chối giá cước." });
-        }
-
-        // Nếu rider đồng ý -> Cập nhật trạng thái và gọi /match tìm tài xế
-        var matched = await tripWorkflow.ProcessInitialMatchingAsync(id, request.PaymentMethod, cancellationToken);
-        if (!matched)
-        {
-            return NotFound(new { message = "Không tìm thấy tài xế phù hợp (NoDriverAvailable)." });
-        }
-
-        return Ok(new { status = "DriverOffered", message = "Đã gửi lời mời đến tài xế gần nhất." });
+        var result = await tripService.ConfirmAsync(id, UserId, request);
+        return Ok(result);
     }
-
-    public record ConfirmTripRequest(bool Accept, string PaymentMethod);
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<TripDetailDto>> GetById(Guid id)
@@ -108,7 +92,7 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     [Authorize(Roles = "Driver")]
     public async Task<ActionResult<TripDriverActionResponse>> MarkEnRoute(Guid id, CancellationToken cancellationToken)
     {
-        var result = await tripWorkflow.UpdateTripStatusAsync(id, TripStatus.EnRoute, cancellationToken);
+        var result = await tripWorkflow.MarkEnRouteAsync(id, UserId, cancellationToken);
         return Ok(result);
     }
 
@@ -119,7 +103,7 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     [Authorize(Roles = "Driver")]
     public async Task<ActionResult<TripDriverActionResponse>> MarkPickedUp(Guid id, CancellationToken cancellationToken)
     {
-        var result = await tripWorkflow.UpdateTripStatusAsync(id, TripStatus.PickedUp, cancellationToken);
+        var result = await tripWorkflow.MarkPickedUpAsync(id, UserId, cancellationToken);
         return Ok(result);
     }
 
@@ -132,7 +116,7 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     [Authorize(Roles = "Driver")]
     public async Task<ActionResult<TripDriverActionResponse>> MarkDroppedOff(Guid id, CancellationToken cancellationToken)
     {
-        var result = await tripWorkflow.UpdateTripStatusAsync(id, TripStatus.DroppedOff, cancellationToken);
+        var result = await tripWorkflow.MarkDroppedOffAsync(id, UserId, cancellationToken);
         return Ok(result);
     }
 }

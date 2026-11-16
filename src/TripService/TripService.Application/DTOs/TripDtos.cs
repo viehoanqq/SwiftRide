@@ -27,7 +27,7 @@ public sealed record DriverOfferDto(
     DateTimeOffset CreatedAt);
 
 /// <summary>Trạng thái chuyến sau một thao tác của tài xế.</summary>
-public sealed record TripDriverActionResponse(string Status);
+public sealed record TripDriverActionResponse(string Status, string? FailureReason = null, string? Message = null);
 
 // ----- GET /trips/{id} và GET /trips/me/current
 public record TripDetailDto(

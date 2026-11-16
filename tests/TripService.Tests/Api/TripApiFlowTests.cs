@@ -328,6 +328,33 @@ public class TripApiFlowTests
         return id;
     }
 
+    [Theory]
+    [InlineData("INSUFFICIENT_FUNDS")]
+    [InlineData("CARD_DECLINED")]
+    [InlineData(null)]
+    public async Task Dropoff_FailureResponse_IncludesActualReason_OnFirstCallAndReplay(string? reason)
+    {
+        using var app = new TripApiFactory();
+        using var rider = app.Client(app.Rider, "Rider");
+        using var driver = app.Client(app.Driver, "Driver");
+        app.PaymentClient.Setup(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CreatePaymentResponse(Guid.NewGuid(), PaymentState.FAILED));
+        var id = await AdvanceToPickedUp(app, rider, driver);
+        app.PaymentClient.Setup(p => p.GetByTripAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PaymentDetailResponse(Guid.NewGuid(), id, 50000m,
+                SwiftRide.Contracts.Payments.PaymentMethod.WALLET, PaymentState.FAILED, 1, reason, 0, 0));
+        for (var i = 0; i < 2; i++)
+        {
+            using var response = await driver.PostAsync($"/trips/{id}/dropoff", null);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body = await response.Content.ReadFromJsonAsync<TripDriverActionResponse>();
+            Assert.Equal("PaymentFailed", body!.Status);
+            Assert.Equal(reason, body.FailureReason);
+            Assert.False(string.IsNullOrWhiteSpace(body.Message));
+        }
+        app.PaymentClient.Verify(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task Dropoff_PaymentFailed_TransitionsToPaymentFailedAndReleasesDriver()
     {

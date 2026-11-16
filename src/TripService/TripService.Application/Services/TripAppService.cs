@@ -200,7 +200,7 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
         var result = new List<DriverOfferDto>();
         foreach (var t in tripsWithOffers)
         {
-            var offer = t.Offers.FirstOrDefault(o => o.DriverId == driverId);
+            var offer = t.Offers.FirstOrDefault(o => o.DriverId == driverId && o.Status == OfferStatus.Pending);
             if (offer == null) continue;
 
             result.Add(new DriverOfferDto(
@@ -209,7 +209,7 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
                 new LocationDto((double)t.Location.PickupLat, (double)t.Location.PickupLng, t.Location.PickupAddress),
                 new LocationDto((double)t.Location.DropoffLat, (double)t.Location.DropoffLng, t.Location.DropoffAddress),
                 t.Fare?.Price ?? 0,
-                0.0, // Khoảng cách giả định tới điểm đón
+                offer.DistanceToPickupKm,
                 offer.CreatedAt
             ));
         }
@@ -315,7 +315,7 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
         {
             // Retry only the downstream release. Matching compares trip ownership atomically.
             await driverStatusClient.SetTripStatusAsync(driverId, tripId, DriverAvailabilityStatus.Available, cancellationToken);
-            return new TripDriverActionResponse(trip.Status.ToString());
+            return await DropoffResponseAsync(client, trip, cancellationToken);
         }
 
         if (trip.Status is not (TripStatus.PickedUp or TripStatus.PaymentPending))
@@ -345,12 +345,41 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
         PaymentResultMapping.Apply(trip, paymentStatus);
         if (trip.Status == TripStatus.PaymentPending)
         {
-            return new TripDriverActionResponse(trip.Status.ToString());
+            return await DropoffResponseAsync(client, trip, cancellationToken);
         }
 
         await trips.SaveChangesAsync();
         await driverStatusClient.SetTripStatusAsync(driverId, tripId, DriverAvailabilityStatus.Available, cancellationToken);
-        return new TripDriverActionResponse(trip.Status.ToString());
+        return await DropoffResponseAsync(client, trip, cancellationToken);
+    }
+
+    private static async Task<TripDriverActionResponse> DropoffResponseAsync(
+        IPaymentClient client, Trip trip, CancellationToken cancellationToken)
+    {
+        if (trip.Status != TripStatus.PaymentFailed)
+            return new(trip.Status.ToString());
+
+        string? reason = null;
+        try
+        {
+            var payment = await client.GetByTripAsync(trip.Id, cancellationToken);
+            if (payment?.TripId == trip.Id && payment.Status == PaymentState.FAILED &&
+                payment.Amount == trip.Fare?.Price && trip.Fare.PaymentMethod.HasValue &&
+                payment.Method == ToContractPaymentMethod(trip.Fare.PaymentMethod.Value))
+                reason = payment.FailureReason;
+        }
+        catch (DownstreamException)
+        {
+            // Payment failure is already saved. Missing details must not trigger another charge.
+        }
+
+        var message = reason switch
+        {
+            "INSUFFICIENT_FUNDS" => "Ví không đủ tiền để thanh toán chuyến đi.",
+            "CARD_DECLINED" => "Thẻ bị từ chối thanh toán.",
+            _ => "Thanh toán thất bại. Chưa lấy được lý do chi tiết, vui lòng kiểm tra giao dịch thanh toán."
+        };
+        return new(trip.Status.ToString(), reason, message);
     }
 
     private static async Task<PaymentState> ExecutePaymentWithReconciliationAsync(

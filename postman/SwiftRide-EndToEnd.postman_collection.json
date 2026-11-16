@@ -1,0 +1,1120 @@
+{
+  "info": {
+    "_postman_id": "3c9e7f12-8a4b-4d6e-b123-9876543210ab",
+    "name": "SwiftRide - End-to-End Business Flow (1-Click Runner)",
+    "description": "Bộ Collection kiểm thử tự động End-to-End qua API Gateway (:5000) cho dự án SwiftRide.\n\nHướng dẫn chạy 1-Click (Collection Runner):\n1. Import cả 2 file `SwiftRide-EndToEnd.postman_collection.json` và `SwiftRide-Gateway.postman_environment.json` vào Postman.\n2. Chọn Environment `SwiftRide - API Gateway (Local)` ở góc trên bên phải.\n3. Bấm chuột phải vào Collection -> Run collection -> Run SwiftRide.\n4. Toàn bộ các bước từ Kiểm tra Health -> Đăng nhập Rider & Driver -> Bật Online -> Đặt xe & Báo giá -> Xác nhận giá & Ghép tài xế -> Tài xế nhận chuyến -> Đón/Trả khách -> Kiểm tra Thanh toán & Ví sẽ tự động truyền biến (`riderToken`, `driverToken`, `tripId`, `offerId`, `paymentId`) qua từng bước.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00. System Health Check",
+      "item": [
+        {
+          "name": "0.1 Check Gateway & All Microservices Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Gateway trả về 200 Healthy', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.status).to.eql('Healthy');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/health",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Kiểm tra trạng thái kết nối Database của cả 4 microservice thông qua API Gateway."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01. Auth & Onboarding (Identity Service)",
+      "item": [
+        {
+          "name": "1.1 Login Rider (Nguyễn Văn An - Ví 500k)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Đăng nhập Rider thành công (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const res = pm.response.json();",
+                  "if (res && res.accessToken) {",
+                  "    pm.environment.set('riderToken', res.accessToken);",
+                  "    pm.environment.set('riderId', res.user.id);",
+                  "    console.log('Đã lưu riderToken và riderId:', res.user.id);",
+                  "}",
+                  "",
+                  "pm.test('User có role là Rider', function () {",
+                  "    pm.expect(res.user.role).to.eql('Rider');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{riderPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/auth/login",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Đăng nhập tài khoản Rider01 có sẵn trong SeedData (Số dư ví: 500.000đ) và tự động lưu `riderToken`, `riderId` vào Environment."
+          },
+          "response": []
+        },
+        {
+          "name": "1.2 Get Rider Profile (/auth/me)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Lấy thông tin Rider thành công (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.id).to.eql(pm.environment.get('riderId'));",
+                  "    pm.expect(res.role).to.eql('Rider');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/auth/me",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.3 Login Driver (Lê Văn Cường - Chợ Bến Thành)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Đăng nhập Driver thành công (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const res = pm.response.json();",
+                  "if (res && res.accessToken) {",
+                  "    pm.environment.set('driverToken', res.accessToken);",
+                  "    pm.environment.set('driverId', res.user.id);",
+                  "    console.log('Đã lưu driverToken và driverId:', res.user.id);",
+                  "}",
+                  "",
+                  "pm.test('User có role là Driver', function () {",
+                  "    pm.expect(res.user.role).to.eql('Driver');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{driverPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/auth/login",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Đăng nhập tài khoản Driver01 (Lê Văn Cường) và tự động lưu `driverToken`, `driverId` vào Environment."
+          },
+          "response": []
+        },
+        {
+          "name": "1.4 Get Driver Profile (/auth/me)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Lấy thông tin Driver thành công (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.id).to.eql(pm.environment.get('driverId'));",
+                  "    pm.expect(res.role).to.eql('Driver');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/auth/me",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02. Driver Availability (Matching Service)",
+      "item": [
+        {
+          "name": "2.1 Driver Set Online & Update GPS Location",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Tài xế bật Online thành công (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.status).to.eql('Available');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lat\": {{pickupLat}},\n  \"lng\": {{pickupLng}}\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/availability/online",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "availability",
+                "online"
+              ]
+            },
+            "description": "Tài xế bật trạng thái sẵn sàng nhận chuyến (`Available`) tại vị trí gần điểm đón để đảm bảo được chọn khi ghép chuyến."
+          },
+          "response": []
+        },
+        {
+          "name": "2.2 Driver Get My Availability",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Trạng thái hiện tại của tài xế là Available', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.status).to.eql('Available');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/availability/me",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "availability",
+                "me"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03. Rider Booking & Quote Confirmation (Trip Service)",
+      "item": [
+        {
+          "name": "3.1 Rider Check Wallet Before Trip (/wallets/me)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Lấy thông tin ví Rider thành công (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res).to.have.property('balance');",
+                  "    console.log('Số dư ví Rider trước chuyến đi:', res.balance);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/wallets/me",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "me"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3.2 Rider Create Trip & Get Fare Quote (POST /trips)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Tạo chuyến đi và nhận báo giá thành công (201 Created)', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const res = pm.response.json();",
+                  "if (res && res.tripId) {",
+                  "    pm.environment.set('tripId', res.tripId);",
+                  "    console.log('Đã lưu tripId:', res.tripId, 'Giá cước:', res.price);",
+                  "}",
+                  "",
+                  "pm.test('Trạng thái chuyến đi là Quoted và có giá cước > 0', function () {",
+                  "    pm.expect(res.status).to.eql('Quoted');",
+                  "    pm.expect(res.price).to.be.above(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pickup\": {\n    \"lat\": {{pickupLat}},\n    \"lng\": {{pickupLng}},\n    \"address\": \"{{pickupAddress}}\"\n  },\n  \"dropoff\": {\n    \"lat\": {{dropoffLat}},\n    \"lng\": {{dropoffLng}},\n    \"address\": \"{{dropoffAddress}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/trips",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "trips"
+              ]
+            },
+            "description": "Rider tạo yêu cầu đặt xe. Trip Service gọi nội bộ sang Matching Service (`POST /quote`) để tính giá và chuyển chuyến sang trạng thái `Quoted`. Tự động lưu `tripId`."
+          },
+          "response": []
+        },
+        {
+          "name": "3.3 Rider Get Current Active Trip (/trips/me/current)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Lấy chuyến hiện tại của Rider thành công (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.id).to.eql(pm.environment.get('tripId'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/trips/me/current",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "trips",
+                "me",
+                "current"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3.4 Rider Confirm Fare Quote & Match Nearest Driver",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Xác nhận giá và ghép tài xế thành công (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.status).to.eql('DriverOffered');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accept\": true,\n  \"paymentMethod\": \"WALLET\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/trips/{{tripId}}/confirm",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "confirm"
+              ]
+            },
+            "description": "Rider đồng ý báo giá với phương thức `WALLET`. Trip Service gọi nội bộ sang Matching Service (`POST /match`) tìm tài xế gần nhất đang `Available` và tạo lời mời (`DriverOffered`)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04. Driver Trip Execution (Offer -> EnRoute -> Pickup -> Dropoff)",
+      "item": [
+        {
+          "name": "4.1 Driver Poll Pending Offers (/drivers/me/offers)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Lấy danh sách lời mời của tài xế thành công (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const offers = pm.response.json();",
+                  "if (Array.isArray(offers) && offers.length > 0) {",
+                  "    const targetTripId = pm.environment.get('tripId');",
+                  "    const matchedOffer = offers.find(o => o.tripId === targetTripId) || offers[0];",
+                  "    pm.environment.set('offerId', matchedOffer.offerId);",
+                  "    pm.environment.set('tripId', matchedOffer.tripId);",
+                  "    console.log('Đã nhận lời mời offerId:', matchedOffer.offerId, 'cho tripId:', matchedOffer.tripId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/drivers/me/offers",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "drivers",
+                "me",
+                "offers"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4.2 Driver Accept Offer (/trips/{id}/driver-accept)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Tài xế nhận chuyến thành công (200 OK -> DriverAccepted)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.status).to.eql('DriverAccepted');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/trips/{{tripId}}/driver-accept",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "driver-accept"
+              ]
+            },
+            "description": "Tài xế chấp nhận lời mời. Chuyến đi chuyển sang `DriverAccepted` và Trip Service gọi nội bộ sang Matching Service (`PUT /drivers/{id}/status`) để đổi trạng thái tài xế sang `Busy`."
+          },
+          "response": []
+        },
+        {
+          "name": "4.3 Driver Get Current Trip (/drivers/me/current-trip)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Lấy chuyến hiện tại của tài xế thành công (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.id).to.eql(pm.environment.get('tripId'));",
+                  "    pm.expect(res.status).to.eql('DriverAccepted');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/drivers/me/current-trip",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "drivers",
+                "me",
+                "current-trip"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4.4 Driver Mark EnRoute (/trips/{id}/en-route)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Chuyển trạng thái sang EnRoute (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.status).to.eql('EnRoute');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/trips/{{tripId}}/en-route",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "en-route"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4.5 Driver Mark PickedUp (/trips/{id}/pickup)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Chuyển trạng thái sang PickedUp (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.status).to.eql('PickedUp');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/trips/{{tripId}}/pickup",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "pickup"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4.6 Driver Mark DroppedOff & Trigger Auto-Payment (/trips/{id}/dropoff)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Trả khách thành công (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(['Paid', 'PaymentPending', 'PaymentFailed']).to.include(res.status);",
+                  "    console.log('Trạng thái chuyến sau khi Dropoff:', res.status);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/trips/{{tripId}}/dropoff",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "dropoff"
+              ]
+            },
+            "description": "Tài xế hoàn tất trả khách (`DroppedOff` -> `PaymentPending` -> gọi nội bộ `POST /payments` sang Payment Service -> `Paid` và giải phóng tài xế về `Available`)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05. Post-Trip Verification, Payment & Wallet (Payment & Trip Services)",
+      "item": [
+        {
+          "name": "5.1 Rider View Completed Trip & Full History (/trips/{id})",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Xem chi tiết chuyến đi và lịch sử trạng thái thành công (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.id).to.eql(pm.environment.get('tripId'));",
+                  "    pm.expect(res.history.length).to.be.above(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/trips/{{tripId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.2 Rider Get Payment Details By Trip (/payments/by-trip/{tripId})",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Tra cứu giao dịch thanh toán theo TripId (200 OK hoặc 404 nếu chưa tạo payment)', function () {",
+                  "    pm.expect([200, 404]).to.include(pm.response.code);",
+                  "    if (pm.response.code === 200) {",
+                  "        const res = pm.response.json();",
+                  "        pm.environment.set('paymentId', res.id);",
+                  "        console.log('Đã lưu paymentId:', res.id, 'Status:', res.status, 'Driver nhận:', res.driverAmount);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/payments/by-trip/{{tripId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "payments",
+                "by-trip",
+                "{{tripId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.3 Rider Get Payment Details By PaymentId (/payments/{id})",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (!pm.environment.get('paymentId')) {",
+                  "    pm.environment.set('paymentId', '00000000-0000-0000-0000-000000000000');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Kiểm tra chi tiết Payment theo ID', function () {",
+                  "    pm.expect([200, 404]).to.include(pm.response.code);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/payments/{{paymentId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "payments",
+                "{{paymentId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.4 Rider Check Wallet Balance & Ledger After Trip (/wallets/me)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Kiểm tra ví Rider sau chuyến đi (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    console.log('Số dư ví Rider sau chuyến đi:', res.balance, 'Số bút toán:', res.entries.length);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/wallets/me",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "me"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.5 Driver Check Wallet Balance & 80% Split Ledger (/wallets/me)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Kiểm tra ví Driver sau chuyến đi (200 OK)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const res = pm.response.json();",
+                  "    console.log('Số dư ví Driver sau chuyến đi:', res.balance, 'Số bút toán:', res.entries.length);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/wallets/me",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "me"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.6 Security Check: Gateway Blocks Direct POST /payments (403 Forbidden)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Gateway chặn truy cập trực tiếp POST /payments từ bên ngoài (403 Forbidden)', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.code).to.eql('INTERNAL_ENDPOINT_ONLY');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/payments",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "payments"
+              ]
+            },
+            "description": "Kiểm chứng bảo mật tại API Gateway: Client bên ngoài cố tình gọi `POST /payments` qua Gateway sẽ bị chặn ngay với mã `403 INTERNAL_ENDPOINT_ONLY`."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

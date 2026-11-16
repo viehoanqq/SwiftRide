@@ -81,6 +81,8 @@ export default function DriverTripPage() {
                 Thanh toán thất bại (PaymentFailed)
               </legend>
               <p>Khách thanh toán chưa thành công. Bạn chưa nhận được tiền cho chuyến này.</p>
+              {payment?.failureReason === 'INSUFFICIENT_FUNDS' && <p>Ví của khách không đủ tiền để thanh toán chuyến đi.</p>}
+              {payment?.failureReason === 'CARD_DECLINED' && <p>Thẻ của khách bị từ chối thanh toán.</p>}
             </fieldset>
           )}
 

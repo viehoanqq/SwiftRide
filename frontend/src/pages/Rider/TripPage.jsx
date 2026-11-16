@@ -67,7 +67,11 @@ export default function TripPage() {
           {!paymentLoading && (
             <p style={{ color: 'red' }}>
               Lý do thất bại (failureReason):{' '}
-              <strong>{paymentInfo?.failureReason || 'Không có thông tin chi tiết lỗi từ cổng thanh toán.'}</strong>
+              <strong>{paymentInfo?.failureReason === 'INSUFFICIENT_FUNDS'
+                ? 'Ví không đủ tiền để thanh toán chuyến đi.'
+                : paymentInfo?.failureReason === 'CARD_DECLINED'
+                  ? 'Thẻ bị từ chối thanh toán.'
+                  : paymentInfo?.failureReason || 'Không có thông tin chi tiết lỗi từ cổng thanh toán.'}</strong>
             </p>
           )}
         </fieldset>
