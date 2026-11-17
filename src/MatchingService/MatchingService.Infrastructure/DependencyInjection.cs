@@ -17,10 +17,18 @@ public static class DependencyInjection
         services.AddSingleton(new MongoContext(configuration.GetConnectionString("MatchDb")!));
         services.AddScoped<IDriverRepository, DriverRepository>();
         services.AddScoped<DriverAppService>();
+        services.AddScoped<TripLifecycleHandler>();
         services.AddScoped<IQuoteRepository, QuoteRepository>();
         services.AddSwiftRideMessaging(configuration, environment,
-            configureConsumers: bus => bus.AddConsumer<DriverRegisteredConsumer>()
-                .Endpoint(endpoint => endpoint.Name = QueueNames.MatchingDriverRegistered));
+            configureConsumers: bus =>
+            {
+                bus.AddConsumer<DriverRegisteredConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.MatchingDriverRegistered);
+                bus.AddConsumer<TripAcceptedConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.MatchingTripAccepted);
+                bus.AddConsumer<TripClosedConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.MatchingTripClosed);
+            });
         return services;
     }
     public static async Task InitializeDatabaseAsync(this IServiceProvider services)

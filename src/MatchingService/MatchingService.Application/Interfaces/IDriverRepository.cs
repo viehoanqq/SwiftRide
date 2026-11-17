@@ -15,6 +15,8 @@ public interface IDriverRepository
     // Đạt – PUT /drivers/{id}/status. Trả false nếu không tìm thấy tài xế (→ 404)
     Task<bool> SetStatusAsync(string driverId, DriverStatus status);
     Task<bool> SetTripStatusAsync(string driverId, Guid tripId, DriverStatus status);
+    Task ApplyTripAcceptedAsync(string driverId, Guid tripId, DateTime occurredAt, CancellationToken cancellationToken);
+    Task ApplyTripClosedAsync(string driverId, Guid tripId, DateTime occurredAt, CancellationToken cancellationToken);
 
     // Đạt – POST /match: tài xế Available gần nhất trong bán kính, bỏ qua các tài xế đã từ chối. Không có → null
     Task<Driver?> FindNearestAvailableAsync(GeoPoint pickup, double radiusKm, IReadOnlyCollection<string> excludeDriverIds);

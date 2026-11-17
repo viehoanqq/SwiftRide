@@ -84,6 +84,72 @@ public class DriverRepository(MongoContext context) : IDriverRepository
             (status == DriverStatus.Available && await context.Drivers.Find(d => d.Id == driverId).AnyAsync());
     }
 
+    public async Task ApplyTripAcceptedAsync(string driverId, Guid tripId, DateTime occurredAt,
+        CancellationToken cancellationToken)
+    {
+        occurredAt = ToMongoPrecision(occurredAt);
+        var f = Builders<DriverDocument>.Filter;
+        var newer = f.Eq(d => d.LastTripEventAt, null) | f.Lt(d => d.LastTripEventAt, occurredAt);
+        var unassigned = f.Ne(d => d.Status, DriverStatus.Busy);
+        var filter = f.Eq(d => d.Id, driverId) & f.Ne("closedTripIds", tripId.ToString("D")) & newer &
+                     (unassigned | f.Eq(d => d.StatusTripId, tripId.ToString("D")));
+        var update = Builders<DriverDocument>.Update
+            .Set(d => d.Status, DriverStatus.Busy)
+            .Set(d => d.StatusTripId, tripId.ToString("D"))
+            .Set(d => d.LastTripEventAt, occurredAt)
+            .Set(d => d.UpdatedAt, DateTime.UtcNow);
+        var result = await context.Drivers.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
+        if (result.MatchedCount > 0) return;
+
+        var driver = await context.Drivers.Find(d => d.Id == driverId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (driver is null) throw new InvalidOperationException("TripAccepted references an unknown driver.");
+        if (driver.ClosedTripIds.Contains(tripId.ToString("D"))) return;
+        if (driver.LastTripEventAt >= occurredAt) return;
+        throw new InvalidOperationException("Driver is already assigned to another trip.");
+    }
+
+    public async Task ApplyTripClosedAsync(string driverId, Guid tripId, DateTime occurredAt,
+        CancellationToken cancellationToken)
+    {
+        occurredAt = ToMongoPrecision(occurredAt);
+        var f = Builders<DriverDocument>.Filter;
+        var newer = f.Eq(d => d.LastTripEventAt, null) | f.Lt(d => d.LastTripEventAt, occurredAt);
+        var unassigned = f.Ne(d => d.Status, DriverStatus.Busy) &
+                         f.Ne(d => d.StatusTripId, tripId.ToString("D"));
+        var driverFilter = f.Eq(d => d.Id, driverId);
+
+        // Keep a trip-specific tombstone even while another trip owns the driver.
+        var recorded = await context.Drivers.UpdateOneAsync(driverFilter,
+            Builders<DriverDocument>.Update.AddToSet(d => d.ClosedTripIds, tripId.ToString("D")),
+            cancellationToken: cancellationToken);
+        if (recorded.MatchedCount == 0)
+            throw new InvalidOperationException("TripClosed references an unknown driver.");
+
+        // Record a close that arrives before its accept. A later accept for this trip is then stale.
+        var marked = await context.Drivers.UpdateOneAsync(driverFilter & newer & unassigned,
+            Builders<DriverDocument>.Update.Set(d => d.LastTripEventAt, occurredAt),
+            cancellationToken: cancellationToken);
+        if (marked.MatchedCount > 0) return;
+
+        // Releasing the assigned trip and advancing its event clock happen in one document update.
+        var released = await context.Drivers.UpdateOneAsync(
+            driverFilter & newer & f.Eq(d => d.StatusTripId, tripId.ToString("D")),
+            Builders<DriverDocument>.Update
+                .Set(d => d.Status, DriverStatus.Available)
+                .Set(d => d.StatusTripId, null)
+                .Set(d => d.LastTripEventAt, occurredAt)
+                .Set(d => d.UpdatedAt, DateTime.UtcNow),
+            cancellationToken: cancellationToken);
+        if (released.MatchedCount > 0) return;
+
+        var driver = await context.Drivers.Find(d => d.Id == driverId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (driver is null) throw new InvalidOperationException("TripClosed references an unknown driver.");
+        if (driver.LastTripEventAt >= occurredAt || driver.StatusTripId != tripId.ToString("D")) return;
+        throw new InvalidOperationException("TripClosed could not release its assigned driver.");
+    }
+
     public async Task<Driver?> FindNearestAvailableAsync(GeoPoint pickup, double radiusKm, IReadOnlyCollection<string> excludeDriverIds)
     {
         var point = GeoJson.Point(GeoJson.Geographic(pickup.Lng, pickup.Lat));
@@ -119,4 +185,7 @@ public class DriverRepository(MongoContext context) : IDriverRepository
             new GeoPoint(doc.Location.Coordinates.Latitude, doc.Location.Coordinates.Longitude),
         UpdatedAt = doc.UpdatedAt
     };
+
+    private static DateTime ToMongoPrecision(DateTime value) =>
+        new(value.Ticks - value.Ticks % TimeSpan.TicksPerMillisecond, value.Kind);
 }
