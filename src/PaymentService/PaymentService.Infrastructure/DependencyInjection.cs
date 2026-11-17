@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using PaymentService.Application.Interfaces;
 using PaymentService.Application.Services;
 using PaymentService.Infrastructure.Messaging;
@@ -28,9 +29,18 @@ public static class DependencyInjection
         services.AddScoped<ILedgerRepository, LedgerRepository>();
         services.AddScoped<IRefundRepository, RefundRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped<PaymentCheckoutService>();
+        services.AddScoped<IPaymentCheckoutService>(sp => sp.GetRequiredService<PaymentCheckoutService>());
         services.AddSwiftRideMessaging(configuration, environment,
-            configureConsumers: bus => bus.AddConsumer<UserRegisteredConsumer>()
-                .Endpoint(endpoint => endpoint.Name = QueueNames.PaymentUserRegistered));
+            configureConsumers: bus =>
+            {
+                bus.AddConsumer<UserRegisteredConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.PaymentUserRegistered);
+                bus.AddConsumer<RideCompletedConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.PaymentRideCompleted);
+            });
+        if (environment?.IsEnvironment("Testing") != true)
+            services.AddHostedService<PaymentOutboxPublisher>();
         return services;
     }
 

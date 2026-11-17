@@ -13,7 +13,12 @@ public sealed class PaymentCheckoutService(
     IPaymentRepository payments, IAccountRepository accounts, IUnitOfWork unitOfWork,
     PaymentOptions options) : IPaymentCheckoutService
 {
-    public Task<PaymentCreationResult> CreateAsync(CreatePaymentRequest request, CancellationToken cancellationToken)
+    public Task<PaymentCreationResult> CreateAsync(CreatePaymentRequest request, CancellationToken cancellationToken) =>
+        unitOfWork.ExecuteAsync(ct => CreateInsideTransactionAsync(request, ct), cancellationToken);
+
+    // Used by RideCompletedConsumer inside its transaction, so checkout and event bookkeeping commit together.
+    public async Task<PaymentCreationResult> CreateInsideTransactionAsync(
+        CreatePaymentRequest request, CancellationToken cancellationToken)
     {
         if (request.TripId == Guid.Empty || request.RiderId == Guid.Empty || request.DriverId == Guid.Empty ||
             string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.IdempotencyKey.Length > 100 ||
@@ -21,49 +26,47 @@ public sealed class PaymentCheckoutService(
             throw new ValidationException("Invalid payment request.");
         MoneyRules.ValidateAmount(request.Amount);
 
-        return unitOfWork.ExecuteAsync(async ct =>
+        var ct = cancellationToken;
+        await payments.LockRequestAsync(request.IdempotencyKey, request.TripId, ct);
+        var previous = await payments.GetByIdempotencyKeyAsync(request.IdempotencyKey, ct);
+        if (previous is not null)
         {
-            await payments.LockRequestAsync(request.IdempotencyKey, request.TripId, ct);
-            var previous = await payments.GetByIdempotencyKeyAsync(request.IdempotencyKey, ct);
-            if (previous is not null)
-            {
-                if (previous.TripId != request.TripId || previous.RiderId != request.RiderId ||
-                    previous.DriverId != request.DriverId || previous.Amount != request.Amount ||
-                    (int)previous.Method != (int)request.Method || previous.CardToken != request.CardToken)
-                    throw new ConflictException(PaymentErrorCodes.IdempotencyConflict, "Key was used with a different payload.");
-                return new PaymentCreationResult(new(previous.Id, State(previous.Status)), true);
-            }
-            if (await payments.GetByTripIdAsync(request.TripId, ct) is not null)
-                throw new ConflictException(PaymentErrorCodes.TripPaymentExists, "Trip already has a payment.");
+            if (previous.TripId != request.TripId || previous.RiderId != request.RiderId ||
+                previous.DriverId != request.DriverId || previous.Amount != request.Amount ||
+                (int)previous.Method != (int)request.Method || previous.CardToken != request.CardToken)
+                throw new ConflictException(PaymentErrorCodes.IdempotencyConflict, "Key was used with a different payload.");
+            return new PaymentCreationResult(new(previous.Id, State(previous.Status)), true);
+        }
+        if (await payments.GetByTripIdAsync(request.TripId, ct) is not null)
+            throw new ConflictException(PaymentErrorCodes.TripPaymentExists, "Trip already has a payment.");
 
-            // Never pretend to charge a card without a gateway implementation.
-            if (request.Method != PaymentMethod.WALLET)
-                throw new ValidationException("CARD checkout is not configured. Use WALLET.");
-            if (request.CardToken is not null)
-                throw new ValidationException("WALLET must not contain a card token.");
+        // Never pretend to charge a card without a gateway implementation.
+        if (request.Method != PaymentMethod.WALLET)
+            throw new ValidationException("CARD checkout is not configured. Use WALLET.");
+        if (request.CardToken is not null)
+            throw new ValidationException("WALLET must not contain a card token.");
 
-            var rider = await RequireAccount(request.RiderId.ToString("D"), OwnerType.Rider, ct);
-            var driver = await RequireAccount(request.DriverId.ToString("D"), OwnerType.Driver, ct);
-            var platform = await RequireAccount(Account.PlatformOwnerId, OwnerType.Platform, ct);
-            var locked = await accounts.GetForUpdateAsync([rider.Id, driver.Id, platform.Id], ct);
-            if (locked.Count != 3)
-                throw new NotFoundException(PaymentErrorCodes.AccountNotFound, "Payment account is missing.");
-            rider = locked.Single(a => a.Id == rider.Id);
-            driver = locked.Single(a => a.Id == driver.Id);
-            platform = locked.Single(a => a.Id == platform.Id);
+        var rider = await RequireAccount(request.RiderId.ToString("D"), OwnerType.Rider, ct);
+        var driver = await RequireAccount(request.DriverId.ToString("D"), OwnerType.Driver, ct);
+        var platform = await RequireAccount(Account.PlatformOwnerId, OwnerType.Platform, ct);
+        var locked = await accounts.GetForUpdateAsync([rider.Id, driver.Id, platform.Id], ct);
+        if (locked.Count != 3)
+            throw new NotFoundException(PaymentErrorCodes.AccountNotFound, "Payment account is missing.");
+        rider = locked.Single(a => a.Id == rider.Id);
+        driver = locked.Single(a => a.Id == driver.Id);
+        platform = locked.Single(a => a.Id == platform.Id);
 
-            var now = DateTime.UtcNow;
-            var payment = new Payment
-            {
-                Id = Guid.NewGuid(), TripId = request.TripId, RiderId = request.RiderId,
-                DriverId = request.DriverId, Amount = request.Amount, Method = PaymentMethodType.Wallet,
-                IdempotencyKey = request.IdempotencyKey, Status = PaymentStatus.Pending,
-                CreatedAt = now, UpdatedAt = now
-            };
-            PaymentService.Domain.Services.PaymentSettlement.ChargeWallet(payment, rider, driver, platform, options.DriverRate);
-            await payments.AddAsync(payment, ct);
-            return new PaymentCreationResult(new(payment.Id, State(payment.Status)), false);
-        }, cancellationToken);
+        var now = DateTime.UtcNow;
+        var payment = new Payment
+        {
+            Id = Guid.NewGuid(), TripId = request.TripId, RiderId = request.RiderId,
+            DriverId = request.DriverId, Amount = request.Amount, Method = PaymentMethodType.Wallet,
+            IdempotencyKey = request.IdempotencyKey, Status = PaymentStatus.Pending,
+            CreatedAt = now, UpdatedAt = now
+        };
+        PaymentService.Domain.Services.PaymentSettlement.ChargeWallet(payment, rider, driver, platform, options.DriverRate);
+        await payments.AddAsync(payment, ct);
+        return new PaymentCreationResult(new(payment.Id, State(payment.Status)), false);
     }
 
     private async Task<Account> RequireAccount(string owner, OwnerType type, CancellationToken ct) =>

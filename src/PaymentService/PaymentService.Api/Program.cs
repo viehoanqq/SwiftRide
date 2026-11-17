@@ -17,8 +17,6 @@ builder.Services.AddOptions<PaymentOptions>()
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<PaymentOptions>>().Value);
 
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
-builder.Services.AddScoped<PaymentService.Application.Interfaces.IPaymentCheckoutService,
-    PaymentService.Application.Services.PaymentCheckoutService>();
 builder.Services.AddScoped<PaymentService.Application.Interfaces.IPaymentAppService,
     PaymentService.Application.Services.PaymentAppService>();
 builder.Services.AddScoped<PaymentService.Application.Interfaces.IRefundAppService,
