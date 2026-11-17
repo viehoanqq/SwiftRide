@@ -112,7 +112,8 @@ public class TripRepository(TripDbContext db) : ITripRepository
                 if (assignment.Trip.Status == TripStatus.DriverAccepted &&
                     await db.Trips.AnyAsync(t => t.Id != assignment.Trip.Id &&
                         (t.Status == TripStatus.DriverAccepted || t.Status == TripStatus.EnRoute ||
-                         t.Status == TripStatus.PickedUp) &&
+                         t.Status == TripStatus.PickedUp || t.Status == TripStatus.DroppedOff ||
+                         t.Status == TripStatus.PaymentPending) &&
                         t.Offers.Any(o => o.DriverId == assignment.DriverId && o.Status == OfferStatus.Accepted)))
                     throw new ConflictException("DRIVER_BUSY", "Tài xế đã nhận một chuyến khác.");
             }

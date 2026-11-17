@@ -21,6 +21,37 @@ public sealed class SqlServerFactAttribute : FactAttribute
 public class TripRepositorySqlServerTests
 {
     [SqlServerFact]
+    public async Task ConcurrentAccepts_ForSameDriver_CommitOnlyOneTripAndEvent()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var first = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01);
+        var second = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01);
+        await using (var seed = database.Context())
+        {
+            seed.Trips.AddRange(first, second);
+            await seed.SaveChangesAsync();
+        }
+
+        async Task<bool> Accept(Guid tripId)
+        {
+            await using var db = database.Context();
+            var repo = new TripRepository(db);
+            var trip = (await repo.GetByIdAsync(tripId))!;
+            trip.AcceptOffer(SeedData.Driver01);
+            repo.AddOutboxEvent(new TripAccepted(Guid.NewGuid(), tripId, null,
+                DateTime.UtcNow, tripId, SeedData.Driver01));
+            try { await repo.SaveChangesAsync(); return true; }
+            catch (TripService.Application.Exceptions.ConflictException) { return false; }
+        }
+
+        var results = await Task.WhenAll(Accept(first.Id), Accept(second.Id));
+        Assert.Single(results, won => won);
+        await using var verify = database.Context();
+        Assert.Single(await verify.Trips.Where(t => t.Status == TripStatus.DriverAccepted).ToListAsync());
+        Assert.Single(await verify.OutboxMessages.ToListAsync());
+    }
+
+    [SqlServerFact]
     public async Task PendingOffers_ExcludeOtherDriversRejectedAndFinishedTrips()
     {
         await using var database = await TestDatabase.CreateAsync();

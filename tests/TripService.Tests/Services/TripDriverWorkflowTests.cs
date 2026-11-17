@@ -6,6 +6,7 @@ using TripService.Application.Services;
 using TripService.Domain.Entities;
 using TripService.Domain.Enums;
 using TripService.Domain.Exceptions;
+using SwiftRide.Contracts.Events;
 
 namespace TripService.Tests.Services;
 
@@ -109,6 +110,8 @@ public class TripDriverWorkflowTests
         var response = await Service.AcceptOfferAsync(trip.Id, driver, default);
 
         Assert.Equal("DriverAccepted", response.Status);
+        repository.Verify(r => r.AddOutboxEvent(It.Is<TripAccepted>(e =>
+            e.TripId == trip.Id && e.DriverId == driver && e.CorrelationId == trip.Id && e.EventId != Guid.Empty)), Times.Once);
         repository.Verify(r => r.SaveChangesAsync(), Times.Once);
         repository.Verify(r => r.AddOffer(It.IsAny<TripDriverOffer>()), Times.Never);
     }

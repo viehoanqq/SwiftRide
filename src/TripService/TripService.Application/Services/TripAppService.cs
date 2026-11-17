@@ -1,5 +1,4 @@
-using System.Runtime.ExceptionServices;
-using SwiftRide.Contracts.Payments;
+using SwiftRide.Contracts.Events;
 using TripService.Application.DTOs;
 using TripService.Application.Exceptions;
 using TripService.Application.Interfaces;
@@ -14,8 +13,7 @@ namespace TripService.Application.Services;
 
 public class TripAppService(ITripRepository trips, IMatchingClient matching,
     IDriverStatusClient driverStatusClient,
-    TripWorkflowOptions? workflowOptions = null,
-    IPaymentClient? paymentClient = null) : ITripDriverWorkflow
+    TripWorkflowOptions? workflowOptions = null) : ITripDriverWorkflow
 {
     // MINH: tạo chuyến → /quote → Quoted hoặc Failed. 409 nếu đang có chuyến chưa kết thúc
     public async Task<CreateTripResponse> CreateAsync(Guid riderId, CreateTripRequest request)
@@ -247,9 +245,9 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
     // Domain kiểm tra trạng thái Trip, đúng offer Pending,
     // cập nhật offer và ghi history.
     trip.AcceptOffer(driverId);
-
+    trips.AddOutboxEvent(new TripAccepted(
+        Guid.NewGuid(), trip.Id, null, DateTime.UtcNow, trip.Id, driverId));
     await trips.SaveChangesAsync();
-    await driverStatusClient.SetTripStatusAsync(driverId, tripId, DriverAvailabilityStatus.Busy, cancellationToken);
 
     return new TripDriverActionResponse(trip.Status.ToString());
 }
@@ -306,146 +304,34 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var client = paymentClient
-            ?? throw new InvalidOperationException("IPaymentClient is not configured.");
-
         var trip = await GetDriverTripAsync(tripId, driverId, true);
 
-        if (trip.Status is TripStatus.Paid or TripStatus.PaymentFailed)
+        // A repeated HTTP request must not create another payment event.
+        if (trip.Status is TripStatus.PaymentPending or TripStatus.Paid or TripStatus.PaymentFailed)
+            return new TripDriverActionResponse(trip.Status.ToString());
+
+        if (trip.Status != TripStatus.PickedUp)
         {
-            // Retry only the downstream release. Matching compares trip ownership atomically.
-            await driverStatusClient.SetTripStatusAsync(driverId, tripId, DriverAvailabilityStatus.Available, cancellationToken);
-            return await DropoffResponseAsync(client, trip, cancellationToken);
+            trip.MarkDroppedOff(); // Domain produces the existing invalid-transition error.
+            throw new InvalidOperationException("Unexpected trip state after dropoff.");
         }
 
-        if (trip.Status is not (TripStatus.PickedUp or TripStatus.PaymentPending))
+        if (trip.Fare?.PaymentMethod is not PaymentMethod method)
+            throw new InvalidTripStateException("INVALID_TRIP_STATE: Chuyến đi chưa có thông tin thanh toán.");
+
+        trip.MarkDroppedOff(); // Adds DroppedOff and PaymentPending history entries.
+        var paymentMethod = method switch
         {
-            // Delegate to Domain State Pattern to throw InvalidTripStateException (409).
-            trip.MarkDroppedOff();
-        }
-
-        if (trip.Fare is null || trip.Fare.PaymentMethod is null)
-        {
-            throw new InvalidTripStateException(
-                "INVALID_TRIP_STATE: Chuyến đi chưa có thông tin giá cước hoặc phương thức thanh toán.");
-        }
-
-        if (trip.Status == TripStatus.PickedUp)
-        {
-            trip.MarkDroppedOff();
-            await trips.SaveChangesAsync();
-        }
-
-        var paymentStatus = await ExecutePaymentWithReconciliationAsync(
-            client,
-            trip,
-            driverId,
-            cancellationToken);
-
-        PaymentResultMapping.Apply(trip, paymentStatus);
-        if (trip.Status == TripStatus.PaymentPending)
-        {
-            return await DropoffResponseAsync(client, trip, cancellationToken);
-        }
-
-        await trips.SaveChangesAsync();
-        await driverStatusClient.SetTripStatusAsync(driverId, tripId, DriverAvailabilityStatus.Available, cancellationToken);
-        return await DropoffResponseAsync(client, trip, cancellationToken);
-    }
-
-    private static async Task<TripDriverActionResponse> DropoffResponseAsync(
-        IPaymentClient client, Trip trip, CancellationToken cancellationToken)
-    {
-        if (trip.Status != TripStatus.PaymentFailed)
-            return new(trip.Status.ToString());
-
-        string? reason = null;
-        try
-        {
-            var payment = await client.GetByTripAsync(trip.Id, cancellationToken);
-            if (payment?.TripId == trip.Id && payment.Status == PaymentState.FAILED &&
-                payment.Amount == trip.Fare?.Price && trip.Fare.PaymentMethod.HasValue &&
-                payment.Method == ToContractPaymentMethod(trip.Fare.PaymentMethod.Value))
-                reason = payment.FailureReason;
-        }
-        catch (DownstreamException)
-        {
-            // Payment failure is already saved. Missing details must not trigger another charge.
-        }
-
-        var message = reason switch
-        {
-            "INSUFFICIENT_FUNDS" => "Ví không đủ tiền để thanh toán chuyến đi.",
-            "CARD_DECLINED" => "Thẻ bị từ chối thanh toán.",
-            _ => "Thanh toán thất bại. Chưa lấy được lý do chi tiết, vui lòng kiểm tra giao dịch thanh toán."
+            PaymentMethod.Wallet => ContractPaymentMethod.WALLET,
+            PaymentMethod.Card => ContractPaymentMethod.CARD,
+            _ => throw new InvalidTripStateException("INVALID_TRIP_STATE: Phương thức thanh toán không hợp lệ.")
         };
-        return new(trip.Status.ToString(), reason, message);
+        trips.AddOutboxEvent(new RideCompleted(
+            Guid.NewGuid(), trip.Id, null, DateTime.UtcNow,
+            trip.Id, trip.RiderId, driverId, trip.Fare.Price, paymentMethod));
+        await trips.SaveChangesAsync();
+        return new TripDriverActionResponse(trip.Status.ToString());
     }
-
-    private static async Task<PaymentState> ExecutePaymentWithReconciliationAsync(
-        IPaymentClient client,
-        Trip trip,
-        Guid driverId,
-        CancellationToken cancellationToken)
-    {
-        var paymentRequest = new CreatePaymentRequest(
-            trip.Id,
-            trip.RiderId,
-            driverId,
-            trip.Fare!.Price,
-            ToContractPaymentMethod(trip.Fare.PaymentMethod!.Value),
-            PaymentProtocol.TripPaymentKey(trip.Id));
-
-        try
-        {
-            var created = await client.CreateAsync(paymentRequest, cancellationToken);
-            if (created.PaymentId == Guid.Empty)
-            {
-                throw new DownstreamException(
-                    502,
-                    PaymentErrorCodes.InvalidPaymentResponse,
-                    "Payment trả về PaymentId không hợp lệ.");
-            }
-
-            return created.Status;
-        }
-        catch (DownstreamException ex) when (ex.StatusCode is 502 or 504 && !cancellationToken.IsCancellationRequested)
-        {
-            PaymentDetailResponse? existing;
-            try
-            {
-                existing = await client.GetByTripAsync(trip.Id, cancellationToken);
-            }
-            catch (DownstreamException)
-            {
-                ExceptionDispatchInfo.Capture(ex).Throw();
-                throw;
-            }
-
-            if (existing is null || existing.Status == PaymentState.PENDING)
-            {
-                throw;
-            }
-
-            if (existing.TripId != trip.Id || existing.Amount != paymentRequest.Amount || existing.Method != paymentRequest.Method)
-            {
-                throw new DownstreamException(
-                    502,
-                    PaymentErrorCodes.InvalidPaymentResponse,
-                    "Kết quả thanh toán không khớp với chuyến đi.");
-            }
-
-            return existing.Status;
-        }
-    }
-
-    private static ContractPaymentMethod ToContractPaymentMethod(PaymentMethod method) => method switch
-    {
-        PaymentMethod.Wallet => ContractPaymentMethod.WALLET,
-        PaymentMethod.Card => ContractPaymentMethod.CARD,
-        _ => throw new InvalidTripStateException("INVALID_TRIP_STATE: Phương thức thanh toán không hợp lệ.")
-    };
-
     private async Task<TripDriverActionResponse> ApplyDriverActionAsync(
         Guid tripId, Guid driverId, Action<Trip> action, CancellationToken cancellationToken,
         DriverAvailabilityStatus? matchingStatus = null)

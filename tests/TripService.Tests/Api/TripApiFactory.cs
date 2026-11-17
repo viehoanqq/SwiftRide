@@ -13,6 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
 using SwiftRide.Contracts.Payments;
+using SwiftRide.Contracts.Events;
 using TripService.Application.DTOs;
 using TripService.Application.Interfaces;
 using TripService.Domain.Entities;
@@ -84,6 +85,7 @@ public sealed class TripApiFactory : WebApplicationFactory<Program>
 public sealed class TripStore
 {
     public Dictionary<Guid, Trip> Committed { get; } = new();
+    public List<IIntegrationEvent> Events { get; } = [];
     public Exception? SaveFailure { get; set; }
     public static Trip Copy(Trip trip)
     {
@@ -96,6 +98,7 @@ public sealed class TripStore
 internal sealed class MemoryTripRepository(TripStore store) : ITripRepository
 {
     private readonly Dictionary<Guid, Trip> tracked = new();
+    private readonly List<IIntegrationEvent> pendingEvents = [];
     private static bool Active(Trip t) => t.Status is not
         (TripStatus.Paid or TripStatus.Cancelled or TripStatus.Failed or TripStatus.PaymentFailed);
     private Trip Track(Trip t)
@@ -105,7 +108,7 @@ internal sealed class MemoryTripRepository(TripStore store) : ITripRepository
     }
     public Task AddAsync(Trip trip) { tracked[trip.Id] = trip; return Task.CompletedTask; }
     public void AddOffer(TripDriverOffer offer) { }
-    public void AddOutboxEvent(SwiftRide.Contracts.Events.IIntegrationEvent integrationEvent) { }
+    public void AddOutboxEvent(IIntegrationEvent integrationEvent) => pendingEvents.Add(integrationEvent);
     public Task<Trip?> GetByIdAsync(Guid id) => Task.FromResult(
         store.Committed.TryGetValue(id, out var trip) ? Track(trip) : null);
     public Task<Trip?> GetActiveByRiderAsync(Guid riderId) => Task.FromResult(
@@ -126,6 +129,8 @@ internal sealed class MemoryTripRepository(TripStore store) : ITripRepository
             for (var i = 0; i < trip.History.Count; i++) trip.History[i].Id = i + 1;
             store.Committed[trip.Id] = TripStore.Copy(trip);
         }
+        store.Events.AddRange(pendingEvents);
+        pendingEvents.Clear();
         return Task.CompletedTask;
     }
 }

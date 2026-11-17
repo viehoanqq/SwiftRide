@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -69,26 +69,26 @@ public class TripApiFlowTests
         Assert.Equal(id, (await driver.GetFromJsonAsync<TripDetailDto>("/drivers/me/current-trip"))!.Id);
         await AssertState(await driver.PostAsync($"/trips/{id}/en-route", null), "EnRoute");
         await AssertState(await driver.PostAsync($"/trips/{id}/pickup", null), "PickedUp");
-        await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "Paid");
+        await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "PaymentPending");
         var detail = (await rider.GetFromJsonAsync<TripDetailDto>($"/trips/{id}"))!;
-        Assert.Equal(new[] { "Requested", "Quoted", "DriverOffered", "DriverAccepted", "EnRoute", "PickedUp", "DroppedOff", "PaymentPending", "Paid" },
+        Assert.Equal(new[] { "Requested", "Quoted", "DriverOffered", "DriverAccepted", "EnRoute", "PickedUp", "DroppedOff", "PaymentPending" },
             detail.History.Select(h => h.To));
         Assert.Null(detail.History[0].From);
         for (var i = 1; i < detail.History.Count; i++) Assert.Equal(detail.History[i - 1].To, detail.History[i].From);
         Assert.Equal(app.Driver, detail.Driver!.Id);
-        app.PaymentClient.Verify(p => p.CreateAsync(It.Is<CreatePaymentRequest>(r =>
-            r.TripId == id &&
-            r.RiderId == app.Rider &&
-            r.DriverId == app.Driver &&
-            r.Amount == 50000m &&
-            r.Method == ContractPaymentMethod.WALLET &&
-            r.IdempotencyKey == PaymentProtocol.TripPaymentKey(id)), It.IsAny<CancellationToken>()), Times.Once);
-        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Busy, It.IsAny<CancellationToken>()), Times.Once);
-        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Once);
-        Assert.Equal(HttpStatusCode.NoContent, (await driver.GetAsync("/drivers/me/current-trip")).StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, (await rider.GetAsync("/trips/me/current")).StatusCode);
+        var accepted = Assert.Single(app.Store.Events.OfType<SwiftRide.Contracts.Events.TripAccepted>());
+        var completed = Assert.Single(app.Store.Events.OfType<SwiftRide.Contracts.Events.RideCompleted>());
+        Assert.Equal(id, accepted.TripId);
+        Assert.Equal(id, completed.TripId);
+        Assert.Equal(app.Rider, completed.RiderId);
+        Assert.Equal(app.Driver, completed.DriverId);
+        Assert.Equal(50000m, completed.Amount);
+        Assert.Equal(ContractPaymentMethod.WALLET, completed.PaymentMethod);
+        app.PaymentClient.Verify(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DriverAvailabilityStatus>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Equal(id, (await driver.GetFromJsonAsync<TripDetailDto>("/drivers/me/current-trip"))!.Id);
+        Assert.Equal(id, (await rider.GetFromJsonAsync<TripDetailDto>("/trips/me/current"))!.Id);
     }
-
     [Fact]
     public async Task Reject_ExcludesPreviousDriver_ThenFailsAtMaxAttempts()
     {
@@ -209,21 +209,24 @@ public class TripApiFlowTests
         await Error(await rider.GetAsync($"/trips/{Guid.NewGuid()}"), HttpStatusCode.NotFound, "TRIP_NOT_FOUND");
     }
 
-    [Theory]
-    [InlineData(502)]
-    [InlineData(504)]
-    public async Task StatusClientFailure_ReturnsErrorButTripHasAlreadyCommitted(int status)
+    [Fact]
+    public async Task Accept_EmitsTripAcceptedWithoutCallingMatchingStatusHttp()
     {
         using var app = new TripApiFactory();
         using var rider = app.Client(app.Rider, "Rider");
         using var driver = app.Client(app.Driver, "Driver");
         var id = await Offer(app, rider);
         app.StatusClient.Setup(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Busy, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new DownstreamException(status, "MATCHING_FAILURE", "Test failure"));
-        await Error(await driver.PostAsync($"/trips/{id}/driver-accept", null), (HttpStatusCode)status, "MATCHING_FAILURE");
-        Assert.Equal(TripStatus.DriverAccepted, app.Store.Committed[id].Status);
-    }
+            .ThrowsAsync(new DownstreamException(502, "MATCHING_FAILURE", "Test failure"));
 
+        await AssertState(await driver.PostAsync($"/trips/{id}/driver-accept", null), "DriverAccepted");
+        var accepted = Assert.Single(app.Store.Events.OfType<SwiftRide.Contracts.Events.TripAccepted>());
+        Assert.Equal(id, accepted.TripId);
+        Assert.Equal(app.Driver, accepted.DriverId);
+        Assert.Equal(id, accepted.CorrelationId);
+        Assert.NotEqual(Guid.Empty, accepted.EventId);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DriverAvailabilityStatus>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
     [Fact]
     public async Task ConcurrencyFailure_Returns409AndDoesNotCallStatusClient()
     {
@@ -297,28 +300,6 @@ public class TripApiFlowTests
         Assert.Equal(before, JsonSerializer.Serialize(app.Store.Committed));
     }
 
-    [Fact]
-    public async Task RepeatedEnRoutePickupDropoff_DoesNotAddHistoryOrRepeatStatusUpdate()
-    {
-        using var app = new TripApiFactory();
-        using var rider = app.Client(app.Rider, "Rider");
-        using var driver = app.Client(app.Driver, "Driver");
-        var id = await Offer(app, rider);
-        await AssertState(await driver.PostAsync($"/trips/{id}/driver-accept", null), "DriverAccepted");
-        foreach (var (action, status) in new[] { ("en-route", "EnRoute"), ("pickup", "PickedUp"), ("dropoff", "Paid") })
-        {
-            await AssertState(await driver.PostAsync($"/trips/{id}/{action}", null), status);
-            var before = JsonSerializer.Serialize(app.Store.Committed[id]);
-            if (action == "dropoff")
-                await AssertState(await driver.PostAsync($"/trips/{id}/{action}", null), "Paid");
-            else
-                await Error(await driver.PostAsync($"/trips/{id}/{action}", null), HttpStatusCode.Conflict, "INVALID_TRIP_STATE");
-            Assert.Equal(before, JsonSerializer.Serialize(app.Store.Committed[id]));
-        }
-        app.PaymentClient.Verify(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()), Times.Once);
-        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Exactly(2));
-    }
-
     private static async Task<Guid> AdvanceToPickedUp(TripApiFactory app, HttpClient rider, HttpClient driver)
     {
         var id = await Offer(app, rider);
@@ -328,162 +309,41 @@ public class TripApiFlowTests
         return id;
     }
 
-    [Theory]
-    [InlineData("INSUFFICIENT_FUNDS")]
-    [InlineData("CARD_DECLINED")]
-    [InlineData(null)]
-    public async Task Dropoff_FailureResponse_IncludesActualReason_OnFirstCallAndReplay(string? reason)
+    [Fact]
+    public async Task Dropoff_PersistsPaymentPendingAndOneRideCompletedOnReplay()
     {
         using var app = new TripApiFactory();
         using var rider = app.Client(app.Rider, "Rider");
         using var driver = app.Client(app.Driver, "Driver");
+        var id = await AdvanceToPickedUp(app, rider, driver);
         app.PaymentClient.Setup(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new CreatePaymentResponse(Guid.NewGuid(), PaymentState.FAILED));
-        var id = await AdvanceToPickedUp(app, rider, driver);
-        app.PaymentClient.Setup(p => p.GetByTripAsync(id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PaymentDetailResponse(Guid.NewGuid(), id, 50000m,
-                SwiftRide.Contracts.Payments.PaymentMethod.WALLET, PaymentState.FAILED, 1, reason, 0, 0));
-        for (var i = 0; i < 2; i++)
-        {
-            using var response = await driver.PostAsync($"/trips/{id}/dropoff", null);
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            var body = await response.Content.ReadFromJsonAsync<TripDriverActionResponse>();
-            Assert.Equal("PaymentFailed", body!.Status);
-            Assert.Equal(reason, body.FailureReason);
-            Assert.False(string.IsNullOrWhiteSpace(body.Message));
-        }
-        app.PaymentClient.Verify(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task Dropoff_PaymentFailed_TransitionsToPaymentFailedAndReleasesDriver()
-    {
-        using var app = new TripApiFactory();
-        using var rider = app.Client(app.Rider, "Rider");
-        using var driver = app.Client(app.Driver, "Driver");
-        app.PaymentClient.Setup(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new CreatePaymentResponse(Guid.NewGuid(), PaymentState.FAILED));
-        var id = await AdvanceToPickedUp(app, rider, driver);
-
-        await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "PaymentFailed");
-
-        var detail = (await rider.GetFromJsonAsync<TripDetailDto>($"/trips/{id}"))!;
-        Assert.Equal(TripStatus.PaymentFailed.ToString(), detail.Status);
-        Assert.Equal("PaymentPending", detail.History[^1].From);
-        Assert.Equal("PaymentFailed", detail.History[^1].To);
-        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Once);
-        Assert.Equal(HttpStatusCode.NoContent, (await driver.GetAsync("/drivers/me/current-trip")).StatusCode);
-        await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "PaymentFailed");
-        app.PaymentClient.Verify(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task Dropoff_PaymentTimeoutAndUnresolved_KeepsPaymentPendingAndResumesOnRetry()
-    {
-        using var app = new TripApiFactory();
-        using var rider = app.Client(app.Rider, "Rider");
-        using var driver = app.Client(app.Driver, "Driver");
-        var id = await AdvanceToPickedUp(app, rider, driver);
-        var expectedKey = PaymentProtocol.TripPaymentKey(id);
-
-        app.PaymentClient.SetupSequence(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new DownstreamException(504, PaymentErrorCodes.PaymentTimeout, "Timeout"))
-            .ReturnsAsync(new CreatePaymentResponse(Guid.NewGuid(), PaymentState.SUCCEEDED));
-        app.PaymentClient.Setup(p => p.GetByTripAsync(id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync((PaymentDetailResponse?)null);
-
-        await Error(await driver.PostAsync($"/trips/{id}/dropoff", null), HttpStatusCode.GatewayTimeout, PaymentErrorCodes.PaymentTimeout);
-        Assert.Equal(TripStatus.PaymentPending, app.Store.Committed[id].Status);
-        var pendingHistoryCount = app.Store.Committed[id].History.Count;
-        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Never);
-
-        await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "Paid");
-
-        Assert.Equal(TripStatus.Paid, app.Store.Committed[id].Status);
-        Assert.Equal(pendingHistoryCount + 1, app.Store.Committed[id].History.Count);
-        Assert.Equal(TripStatus.PaymentPending, app.Store.Committed[id].History[^1].FromStatus);
-        Assert.Equal(TripStatus.Paid, app.Store.Committed[id].History[^1].ToStatus);
-        app.PaymentClient.Verify(p => p.CreateAsync(
-            It.Is<CreatePaymentRequest>(r => r.IdempotencyKey == expectedKey),
-            It.IsAny<CancellationToken>()), Times.Exactly(2));
-        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task Dropoff_PaymentTimeoutButReconciledSucceeded_CompletesPaid()
-    {
-        using var app = new TripApiFactory();
-        using var rider = app.Client(app.Rider, "Rider");
-        using var driver = app.Client(app.Driver, "Driver");
-        var id = await AdvanceToPickedUp(app, rider, driver);
-
-        app.PaymentClient.Setup(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new DownstreamException(504, PaymentErrorCodes.PaymentTimeout, "Timeout"));
-        app.PaymentClient.Setup(p => p.GetByTripAsync(id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PaymentDetailResponse(
-                Guid.NewGuid(), id, 50000m, ContractPaymentMethod.WALLET, PaymentState.SUCCEEDED, 1, null, 40000m, 10000m));
-
-        await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "Paid");
-
-        Assert.Equal(TripStatus.Paid, app.Store.Committed[id].Status);
-        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task Dropoff_MatchingUnavailableAfterPayment_Returns502ButKeepsPaidCommitted()
-    {
-        using var app = new TripApiFactory();
-        using var rider = app.Client(app.Rider, "Rider");
-        using var driver = app.Client(app.Driver, "Driver");
-        var id = await AdvanceToPickedUp(app, rider, driver);
-        app.StatusClient.Setup(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new DownstreamException(502, "MATCHING_UNAVAILABLE", "Matching down"));
-
-        await Error(await driver.PostAsync($"/trips/{id}/dropoff", null), HttpStatusCode.BadGateway, "MATCHING_UNAVAILABLE");
-
-        Assert.Equal(TripStatus.Paid, app.Store.Committed[id].Status);
-        var historyCount = app.Store.Committed[id].History.Count;
-        app.StatusClient.Setup(c => c.SetTripStatusAsync(app.Driver, id, DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-        await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "Paid");
-        Assert.Equal(historyCount, app.Store.Committed[id].History.Count);
-        app.PaymentClient.Verify(c => c.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task Dropoff_PaymentTimeoutAndReconciledPending_KeepsPaymentPendingWithoutReleasingDriver()
-    {
-        using var app = new TripApiFactory();
-        using var rider = app.Client(app.Rider, "Rider");
-        using var driver = app.Client(app.Driver, "Driver");
-        var id = await AdvanceToPickedUp(app, rider, driver);
-
-        app.PaymentClient.Setup(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new DownstreamException(504, PaymentErrorCodes.PaymentTimeout, "Timeout"));
-        app.PaymentClient.Setup(p => p.GetByTripAsync(id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new PaymentDetailResponse(
-                Guid.NewGuid(), id, 50000m, ContractPaymentMethod.WALLET, PaymentState.PENDING, 1, null, 0m, 0m));
-
-        await Error(await driver.PostAsync($"/trips/{id}/dropoff", null), HttpStatusCode.GatewayTimeout, PaymentErrorCodes.PaymentTimeout);
-
-        Assert.Equal(TripStatus.PaymentPending, app.Store.Committed[id].Status);
-        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task Dropoff_PaymentReturnsPendingDirectly_KeepsPaymentPendingWithoutReleasingDriver()
-    {
-        using var app = new TripApiFactory();
-        using var rider = app.Client(app.Rider, "Rider");
-        using var driver = app.Client(app.Driver, "Driver");
-        var id = await AdvanceToPickedUp(app, rider, driver);
-
-        app.PaymentClient.Setup(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new CreatePaymentResponse(Guid.NewGuid(), PaymentState.PENDING));
+            .ThrowsAsync(new DownstreamException(504, "PAYMENT_TIMEOUT", "Payment unavailable"));
 
         await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "PaymentPending");
+        var historyCount = app.Store.Committed[id].History.Count;
+        await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "PaymentPending");
 
+        Assert.Equal(historyCount, app.Store.Committed[id].History.Count);
         Assert.Equal(TripStatus.PaymentPending, app.Store.Committed[id].Status);
-        app.StatusClient.Verify(c => c.SetTripStatusAsync(app.Driver, It.IsAny<Guid>(), DriverAvailabilityStatus.Available, It.IsAny<CancellationToken>()), Times.Never);
+        var completed = Assert.Single(app.Store.Events.OfType<SwiftRide.Contracts.Events.RideCompleted>());
+        Assert.Equal(id, completed.CorrelationId);
+        Assert.Equal(50000m, completed.Amount);
+        Assert.NotEqual(Guid.Empty, completed.EventId);
+        app.PaymentClient.Verify(p => p.CreateAsync(It.IsAny<CreatePaymentRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        app.StatusClient.Verify(c => c.SetTripStatusAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DriverAvailabilityStatus>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Dropoff_SaveFailure_DoesNotCommitPaymentPendingOrEvent()
+    {
+        using var app = new TripApiFactory();
+        using var rider = app.Client(app.Rider, "Rider");
+        using var driver = app.Client(app.Driver, "Driver");
+        var id = await AdvanceToPickedUp(app, rider, driver);
+        app.Store.SaveFailure = new DbUpdateConcurrencyException("Simulated conflict");
+
+        await Error(await driver.PostAsync($"/trips/{id}/dropoff", null), HttpStatusCode.Conflict, "CONCURRENCY_CONFLICT");
+        Assert.Equal(TripStatus.PickedUp, app.Store.Committed[id].Status);
+        Assert.Empty(app.Store.Events.OfType<SwiftRide.Contracts.Events.RideCompleted>());
     }
 }
