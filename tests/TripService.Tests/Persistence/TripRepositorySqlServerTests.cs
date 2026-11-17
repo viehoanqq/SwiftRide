@@ -4,6 +4,7 @@ using TripService.Domain.Enums;
 using TripService.Infrastructure.Persistence;
 using TripService.Infrastructure.Repositories;
 using TripService.Tests.Services;
+using SwiftRide.Contracts.Events;
 
 namespace TripService.Tests.Persistence;
 
@@ -98,6 +99,9 @@ public class TripRepositorySqlServerTests
 
         winner.AcceptOffer(SeedData.Driver01);
         loser.AcceptOffer(SeedData.Driver01);
+        var winnerEventId = Guid.NewGuid();
+        firstRepo.AddOutboxEvent(new TripAccepted(winnerEventId, id, null, DateTime.UtcNow, id, SeedData.Driver01));
+        secondRepo.AddOutboxEvent(new TripAccepted(Guid.NewGuid(), id, null, DateTime.UtcNow, id, SeedData.Driver01));
         // Distinguish the losing offer write, so rollback can be observed in a fresh context.
         loser.Offers[0].RespondedAt = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         await firstRepo.SaveChangesAsync();
@@ -113,6 +117,10 @@ public class TripRepositorySqlServerTests
         Assert.Equal(TripStatus.DriverOffered, saved.History[^1].FromStatus);
         Assert.Equal(TripStatus.DriverAccepted, saved.History[^1].ToStatus);
         Assert.Equal(winner.RowVersion, saved.RowVersion);
+        var outbox = Assert.Single(await verify.OutboxMessages.ToListAsync());
+        Assert.Equal(winnerEventId, outbox.Id);
+        Assert.Equal(nameof(TripAccepted), outbox.Type);
+        Assert.Null(outbox.ProcessedAt);
     }
 
     private sealed class TestDatabase : IAsyncDisposable

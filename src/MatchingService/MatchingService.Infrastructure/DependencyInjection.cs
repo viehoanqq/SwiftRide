@@ -23,8 +23,6 @@ public static class DependencyInjection
                 .Endpoint(endpoint => endpoint.Name = QueueNames.MatchingDriverRegistered));
         return services;
     }
-
-    // MongoDB khÃ´ng cÃ³ migration: khi khá»Ÿi Ä‘á»™ng thÃ¬ táº¡o index vÃ  seed tÃ i xáº¿ náº¿u collection cÃ²n trá»‘ng.
     public static async Task InitializeDatabaseAsync(this IServiceProvider services)
     {
         var context = services.GetRequiredService<MongoContext>();

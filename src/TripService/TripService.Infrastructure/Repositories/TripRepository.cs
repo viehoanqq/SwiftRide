@@ -5,6 +5,9 @@ using TripService.Domain.Enums;
 using TripService.Infrastructure.Persistence;
 using TripService.Application.Exceptions;
 using Microsoft.Data.SqlClient;
+using System.Text.Json;
+using SwiftRide.Contracts.Events;
+using TripService.Infrastructure.Outbox;
 
 namespace TripService.Infrastructure.Repositories;
 
@@ -19,6 +22,25 @@ public class TripRepository(TripDbContext db) : ITripRepository
 
     public void AddOffer(TripDriverOffer offer) =>
         db.TripDriverOffers.Add(offer);
+
+    public void AddOutboxEvent(IIntegrationEvent integrationEvent)
+    {
+        ArgumentNullException.ThrowIfNull(integrationEvent);
+        if (integrationEvent.EventId == Guid.Empty || integrationEvent.CorrelationId == Guid.Empty ||
+            integrationEvent.OccurredAt.Kind != DateTimeKind.Utc || integrationEvent.SchemaVersion < 1)
+            throw new ArgumentException("Integration event metadata is invalid.", nameof(integrationEvent));
+        if (integrationEvent is not (TripAccepted or RideCompleted or TripClosed))
+            throw new ArgumentException("Trip outbox supports only TripAccepted, RideCompleted, and TripClosed.", nameof(integrationEvent));
+
+        db.OutboxMessages.Add(new OutboxMessage
+        {
+            Id = integrationEvent.EventId,
+            Type = integrationEvent.GetType().Name,
+            Payload = JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType()),
+            CorrelationId = integrationEvent.CorrelationId,
+            OccurredAt = integrationEvent.OccurredAt
+        });
+    }
 
     public Task<Trip?> GetByIdAsync(Guid id) =>
         WithDetails().FirstOrDefaultAsync(t => t.Id == id);

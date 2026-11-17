@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TripService.Domain.Entities;
+using TripService.Infrastructure.Outbox;
 
 namespace TripService.Infrastructure.Persistence;
 
@@ -10,6 +11,7 @@ public class TripDbContext(DbContextOptions<TripDbContext> options) : DbContext(
     public DbSet<TripFare> TripFares => Set<TripFare>();
     public DbSet<TripDriverOffer> TripDriverOffers => Set<TripDriverOffer>();
     public DbSet<TripStatusHistory> TripStatusHistory => Set<TripStatusHistory>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

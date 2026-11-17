@@ -2,11 +2,13 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using TripService.Infrastructure.Persistence;
 
 
 using TripService.Application.Interfaces;          // thÃªm
 using TripService.Infrastructure.Clients;
+using TripService.Infrastructure.Outbox;
 using TripService.Infrastructure.Repositories; 
 
 namespace TripService.Infrastructure;
@@ -56,6 +58,8 @@ public static class DependencyInjection
             client.Timeout = Timeout.InfiniteTimeSpan;
         }).AddHttpMessageHandler<ServiceAuthorizationHandler>();
         services.AddSwiftRideMessaging(configuration, environment);
+        if (environment?.IsEnvironment("Testing") != true)
+            services.AddHostedService<TripOutboxPublisher>();
         return services;
     }
 

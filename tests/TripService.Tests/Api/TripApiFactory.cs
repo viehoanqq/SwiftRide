@@ -105,6 +105,7 @@ internal sealed class MemoryTripRepository(TripStore store) : ITripRepository
     }
     public Task AddAsync(Trip trip) { tracked[trip.Id] = trip; return Task.CompletedTask; }
     public void AddOffer(TripDriverOffer offer) { }
+    public void AddOutboxEvent(SwiftRide.Contracts.Events.IIntegrationEvent integrationEvent) { }
     public Task<Trip?> GetByIdAsync(Guid id) => Task.FromResult(
         store.Committed.TryGetValue(id, out var trip) ? Track(trip) : null);
     public Task<Trip?> GetActiveByRiderAsync(Guid riderId) => Task.FromResult(
