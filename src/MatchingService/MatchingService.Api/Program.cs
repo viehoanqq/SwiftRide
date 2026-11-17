@@ -12,7 +12,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 builder.Services.AddScoped<MatchingService.Application.Services.MatchAppService>();
-builder.Services.AddScoped<MatchingService.Application.Services.DriverAppService>();
 builder.Services.AddScoped<QuoteAppService>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();

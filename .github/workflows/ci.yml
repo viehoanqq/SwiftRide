@@ -22,7 +22,7 @@ jobs:
         # MongoDB 8.x không chạy được trên kernel Linux 6.19+ của runner GitHub (SERVER-121912)
         # → riêng CI dùng mongo:7.0; máy local vẫn dùng mongo:8.0 trong docker-compose
         run: |
-          docker compose up -d sqlserver identity-sqlserver postgres rabbitmq
+          docker compose up -d sqlserver postgres rabbitmq
           docker run -d --name swiftride-mongodb -p 27018:27017 mongo:7.0
 
       - name: Restore
@@ -47,23 +47,36 @@ jobs:
             echo "$name NOT ready after 180s"; return 1
           }
           wait_for SQLServer docker exec swiftride-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'SwiftRide@123' -C -Q "SELECT 1"
-          wait_for IdentitySQLServer docker exec swiftride-identity-sqlserver /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'SwiftRide@123' -C -Q "SELECT 1"
           wait_for Postgres  docker exec swiftride-postgres pg_isready -U swiftride -d PayDb
           wait_for MongoDB   docker exec swiftride-mongodb mongosh --quiet --eval "db.runCommand({ping:1})"
           wait_for RabbitMQ  docker exec swiftride-rabbitmq rabbitmq-diagnostics -q ping
 
       - name: Start services
         env:
+          # ExtractIdentity verifies UserDb on the Trip SQL Server during the fresh CI cutover.
+          ConnectionStrings__UserDb: "Server=localhost,1434;Database=UserDb;User Id=sa;Password=SwiftRide@123;TrustServerCertificate=True;Connect Timeout=3"
           RabbitMQ__HostName: localhost
           RabbitMQ__Port: "5672"
           RabbitMQ__UserName: swiftride
           RabbitMQ__Password: swiftride
         run: |
           mkdir -p logs
-          nohup dotnet run --no-build -c Release --project src/TripService/TripService.Api       > logs/trip.log 2>&1 &
           nohup dotnet run --no-build -c Release --project src/MatchingService/MatchingService.Api > logs/matching.log 2>&1 &
           nohup dotnet run --no-build -c Release --project src/PaymentService/PaymentService.Api  > logs/payment.log 2>&1 &
+          for port in 5002 5003; do
+            for i in $(seq 1 60); do
+              if curl -sf "http://localhost:$port/health" > /dev/null; then break; fi
+              if [ "$i" -eq 60 ]; then echo "Service on port $port did not become healthy"; exit 1; fi
+              sleep 2
+            done
+          done
           nohup dotnet run --no-build -c Release --project src/IdentityService/IdentityService.Api > logs/identity.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:5004/health > /dev/null; then break; fi
+            if [ "$i" -eq 60 ]; then echo "IdentityService did not become healthy"; exit 1; fi
+            sleep 2
+          done
+          nohup dotnet run --no-build -c Release --project src/TripService/TripService.Api       > logs/trip.log 2>&1 &
           nohup dotnet run --no-build -c Release --project src/ApiGateway                         > logs/gateway.log 2>&1 &
 
       # Gọi GET /health của Gateway (gom /health của 3 service): 200 = cả 3 DB Healthy
@@ -81,7 +94,7 @@ jobs:
         if: failure()
         run: |
           docker compose ps -a
-          docker compose logs --tail 30 sqlserver identity-sqlserver postgres rabbitmq
+          docker compose logs --tail 30 sqlserver postgres rabbitmq
           docker logs --tail 30 swiftride-mongodb
           tail -n 50 logs/*.log || true
 

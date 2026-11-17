@@ -1,9 +1,12 @@
 ﻿using SwiftRide.Messaging;
 using MatchingService.Application.Interfaces;
+using MatchingService.Application.Services;
+using MatchingService.Infrastructure.Messaging;
 using MatchingService.Infrastructure.Mongo;
 using MatchingService.Infrastructure.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using SwiftRide.Contracts.Events;
 
 namespace MatchingService.Infrastructure;
 
@@ -13,8 +16,11 @@ public static class DependencyInjection
     {
         services.AddSingleton(new MongoContext(configuration.GetConnectionString("MatchDb")!));
         services.AddScoped<IDriverRepository, DriverRepository>();
+        services.AddScoped<DriverAppService>();
         services.AddScoped<IQuoteRepository, QuoteRepository>();
-        services.AddSwiftRideMessaging(configuration, environment);
+        services.AddSwiftRideMessaging(configuration, environment,
+            configureConsumers: bus => bus.AddConsumer<DriverRegisteredConsumer>()
+                .Endpoint(endpoint => endpoint.Name = QueueNames.MatchingDriverRegistered));
         return services;
     }
 
