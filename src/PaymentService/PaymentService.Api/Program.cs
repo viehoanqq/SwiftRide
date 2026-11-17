@@ -44,6 +44,7 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var app = builder.Build();
+app.UseMiddleware<SwiftRide.Messaging.CorrelationLoggingMiddleware>();
 
 if (!app.Environment.IsEnvironment("Testing"))
     await app.Services.MigrateDatabaseAsync();

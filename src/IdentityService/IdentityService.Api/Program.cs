@@ -82,6 +82,7 @@ builder.Services.AddAuthorization();
 
 
 var app = builder.Build();
+app.UseMiddleware<SwiftRide.Messaging.CorrelationLoggingMiddleware>();
 
 
 

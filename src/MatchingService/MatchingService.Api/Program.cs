@@ -106,6 +106,7 @@ builder.Services.AddAuthorization(options =>
 });
 
 var app = builder.Build();
+app.UseMiddleware<SwiftRide.Messaging.CorrelationLoggingMiddleware>();
 
 await app.Services.InitializeDatabaseAsync();
 app.UseMiddleware<ExceptionMiddleware>();              // â† thÃªm, Ä‘áº·t TRÆ¯á»šC Swagger vÃ  MapControllers

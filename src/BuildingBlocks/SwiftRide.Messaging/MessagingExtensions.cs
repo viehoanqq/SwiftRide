@@ -39,7 +39,11 @@ public static class MessagingExtensions
             configureConsumers?.Invoke(bus);
             bus.AddConfigureEndpointsCallback((context, _, endpoint) =>
             {
-                if (isTesting) return;
+                if (isTesting)
+                {
+                    endpoint.UseConsumeFilter(typeof(IntegrationEventConsumeFilter<>), context);
+                    return;
+                }
                 var options = context.GetRequiredService<IOptions<RabbitMqOptions>>().Value;
                 if (endpoint is IRabbitMqReceiveEndpointConfigurator rabbitEndpoint)
                 {
@@ -57,16 +61,23 @@ public static class MessagingExtensions
                         TimeSpan.FromMilliseconds(options.MaxRetryIntervalMs),
                         TimeSpan.FromMilliseconds(options.RetryIntervalDeltaMs));
                 });
+                // The log filter runs inside retry so every attempt has its own result.
+                endpoint.UseConsumeFilter(typeof(IntegrationEventConsumeFilter<>), context);
             });
 
             if (isTesting)
             {
-                bus.UsingInMemory((context, cfg) => cfg.ConfigureEndpoints(context));
+                bus.UsingInMemory((context, cfg) =>
+                {
+                    cfg.UsePublishFilter(typeof(IntegrationEventPublishFilter<>), context);
+                    cfg.ConfigureEndpoints(context);
+                });
                 return;
             }
 
             bus.UsingRabbitMq((context, cfg) =>
             {
+                cfg.UsePublishFilter(typeof(IntegrationEventPublishFilter<>), context);
                 var options = context.GetRequiredService<IOptions<RabbitMqOptions>>().Value;
                 cfg.Host(options.HostName, options.Port, options.VirtualHost, host =>
                 {
