@@ -1,18 +1,18 @@
-using TripService.Infrastructure;
-using TripService.Api.Middleware;              // thêm
+﻿using TripService.Infrastructure;
+using TripService.Api.Middleware;              // thÃªm
 using TripService.Application.Services;  
 using TripService.Application.Interfaces;
 using TripService.Application.Options;
 
-using System.Text;                                       // thêm
-using Microsoft.AspNetCore.Authentication.JwtBearer;     // thêm
-using Microsoft.IdentityModel.Tokens;                    // thêm
+using System.Text;                                       // thÃªm
+using Microsoft.AspNetCore.Authentication.JwtBearer;     // thÃªm
+using Microsoft.IdentityModel.Tokens;                    // thÃªm
 using Microsoft.OpenApi; 
 
-
+SwiftRide.Messaging.DotEnvLoader.Load();
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 builder.Services.AddScoped<TripAppService>();
 builder.Services.AddScoped<ITripDriverWorkflow>(serviceProvider =>
     serviceProvider.GetRequiredService<TripAppService>());
@@ -26,7 +26,7 @@ builder.Services.AddEndpointsApiExplorer();
 
 
 
-// ← SỬA: thêm nút "Authorize" vào Swagger để dán token khi test
+// â† Sá»¬A: thÃªm nÃºt "Authorize" vÃ o Swagger Ä‘á»ƒ dÃ¡n token khi test
 builder.Services.AddSwaggerGen(options =>
 {
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -34,7 +34,7 @@ builder.Services.AddSwaggerGen(options =>
         Type = SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT",
-        Description = "Dán accessToken lấy từ POST /auth/login"
+        Description = "DÃ¡n accessToken láº¥y tá»« POST /auth/login"
     });
     options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
     {
@@ -47,15 +47,15 @@ var jwt = builder.Configuration.GetSection("Jwt");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.MapInboundClaims = false;            // giữ nguyên tên claim "sub", "name", "role"
+        options.MapInboundClaims = false;            // giá»¯ nguyÃªn tÃªn claim "sub", "name", "role"
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidIssuer = jwt["Issuer"],             // phải khớp lúc ký trong JwtTokenService
+            ValidIssuer = jwt["Issuer"],             // pháº£i khá»›p lÃºc kÃ½ trong JwtTokenService
             ValidAudience = jwt["Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["Key"]!)),
-            ClockSkew = TimeSpan.FromSeconds(30),    // cho lệch giờ tối đa 30s (mặc định 5 phút)
+            ClockSkew = TimeSpan.FromSeconds(30),    // cho lá»‡ch giá» tá»‘i Ä‘a 30s (máº·c Ä‘á»‹nh 5 phÃºt)
             NameClaimType = "name",
-            RoleClaimType = "role"                   // để sau này [Authorize(Roles = "Driver")] đọc đúng
+            RoleClaimType = "role"                   // Ä‘á»ƒ sau nÃ y [Authorize(Roles = "Driver")] Ä‘á»c Ä‘Ãºng
         };
         options.Events = new JwtBearerEvents
 {
@@ -66,7 +66,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         await context.Response.WriteAsJsonAsync(new
         {
             code = "FORBIDDEN",
-            message = "Bạn không có quyền thực hiện thao tác này."
+            message = "Báº¡n khÃ´ng cÃ³ quyá»n thá»±c hiá»‡n thao tÃ¡c nÃ y."
         });
     },
     OnChallenge = async context =>
@@ -76,9 +76,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         context.Response.Headers.WWWAuthenticate = "Bearer";
         var (code, message) = context.AuthenticateFailure switch
         {
-            SecurityTokenExpiredException => ("TOKEN_EXPIRED", "Phiên đăng nhập đã hết hạn."),
-            not null => ("TOKEN_INVALID", "Token không hợp lệ."),
-            _ => ("UNAUTHORIZED", "Bạn cần đăng nhập để thực hiện thao tác này.")
+            SecurityTokenExpiredException => ("TOKEN_EXPIRED", "PhiÃªn Ä‘Äƒng nháº­p Ä‘Ã£ háº¿t háº¡n."),
+            not null => ("TOKEN_INVALID", "Token khÃ´ng há»£p lá»‡."),
+            _ => ("UNAUTHORIZED", "Báº¡n cáº§n Ä‘Äƒng nháº­p Ä‘á»ƒ thá»±c hiá»‡n thao tÃ¡c nÃ y.")
         };
         await context.Response.WriteAsJsonAsync(new { code, message });
     }
@@ -96,7 +96,7 @@ var app = builder.Build();
 
 if (!app.Environment.IsEnvironment("Testing"))
     await app.Services.MigrateDatabaseAsync();
-app.UseMiddleware<ExceptionMiddleware>();              // ← thêm, đặt TRƯỚC Swagger và MapControllers
+app.UseMiddleware<ExceptionMiddleware>();              // â† thÃªm, Ä‘áº·t TRÆ¯á»šC Swagger vÃ  MapControllers
 
 if (app.Environment.IsDevelopment())
 {
@@ -104,7 +104,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseAuthentication();     // ← THÊM: đọc và kiểm tra token. PHẢI đứng TRƯỚC UseAuthorization
+app.UseAuthentication();     // â† THÃŠM: Ä‘á»c vÃ  kiá»ƒm tra token. PHáº¢I Ä‘á»©ng TRÆ¯á»šC UseAuthorization
 
 app.UseAuthorization();
 
@@ -113,3 +113,4 @@ app.MapControllers();
 app.Run();
 
 public partial class Program { }
+

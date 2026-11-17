@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MatchingService.Application\MatchingService.Application.csproj" />
+    <ProjectReference Include="..\..\BuildingBlocks\SwiftRide.Messaging\SwiftRide.Messaging.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,10 +1,11 @@
+﻿using SwiftRide.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TripService.Infrastructure.Persistence;
 
 
-using TripService.Application.Interfaces;          // thêm
+using TripService.Application.Interfaces;          // thÃªm
 using TripService.Infrastructure.Clients;
 using TripService.Infrastructure.Repositories; 
 
@@ -12,11 +13,11 @@ namespace TripService.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration, Microsoft.Extensions.Hosting.IHostEnvironment? environment = null)
     {
         services.AddDbContext<TripDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString("TripDb")));
-        services.AddScoped<ITripRepository, TripRepository>();     // thêm: dùng DbContext nên Scoped
+        services.AddScoped<ITripRepository, TripRepository>();     // thÃªm: dÃ¹ng DbContext nÃªn Scoped
 
         services.AddHttpContextAccessor();
         services.AddTransient<ForwardRequestHeadersHandler>();
@@ -54,11 +55,11 @@ public static class DependencyInjection
             client.BaseAddress = paymentServiceUri;
             client.Timeout = Timeout.InfiniteTimeSpan;
         }).AddHttpMessageHandler<ServiceAuthorizationHandler>();
-
+        services.AddSwiftRideMessaging(configuration, environment);
         return services;
     }
 
-    // Tự áp dụng migration khi service khởi động, để cả nhóm không phải chạy "dotnet ef database update" thủ công.
+    // Tá»± Ã¡p dá»¥ng migration khi service khá»Ÿi Ä‘á»™ng, Ä‘á»ƒ cáº£ nhÃ³m khÃ´ng pháº£i cháº¡y "dotnet ef database update" thá»§ cÃ´ng.
     public static async Task MigrateDatabaseAsync(this IServiceProvider services)
     {
         using var scope = services.CreateScope();
@@ -66,3 +67,5 @@ public static class DependencyInjection
         await db.Database.MigrateAsync();
     }
 }
+
+

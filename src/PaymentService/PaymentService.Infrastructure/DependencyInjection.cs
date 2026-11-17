@@ -1,3 +1,4 @@
+﻿using SwiftRide.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,7 +10,7 @@ namespace PaymentService.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration, Microsoft.Extensions.Hosting.IHostEnvironment? environment = null)
     {
         var connection = configuration.GetConnectionString("PayDb");
         if (string.IsNullOrWhiteSpace(connection))
@@ -23,11 +24,11 @@ public static class DependencyInjection
         services.AddScoped<ILedgerRepository, LedgerRepository>();
         services.AddScoped<IRefundRepository, RefundRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
-
+        services.AddSwiftRideMessaging(configuration, environment);
         return services;
     }
 
-    // Tự áp dụng migration khi service khởi động.
+    // Tá»± Ã¡p dá»¥ng migration khi service khá»Ÿi Ä‘á»™ng.
     public static async Task MigrateDatabaseAsync(this IServiceProvider services)
     {
         using var scope = services.CreateScope();
@@ -35,3 +36,5 @@ public static class DependencyInjection
         await db.Database.MigrateAsync();
     }
 }
+
+

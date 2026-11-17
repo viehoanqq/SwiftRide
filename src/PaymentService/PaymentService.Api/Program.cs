@@ -1,4 +1,4 @@
-using PaymentService.Infrastructure;
+﻿using PaymentService.Infrastructure;
 using PaymentService.Api.Middleware;
 using PaymentService.Api.Security;
 using PaymentService.Application.DTOs;
@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi;
 using PaymentService.Application.Options;
 using Microsoft.Extensions.Options;
-
+SwiftRide.Messaging.DotEnvLoader.Load();
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddScoped<PaymentService.Application.Services.AccountRegistrationService>();
 
@@ -17,7 +17,7 @@ builder.Services.AddOptions<PaymentOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<PaymentOptions>>().Value);
 
-builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 builder.Services.AddScoped<PaymentService.Application.Interfaces.IPaymentCheckoutService,
     PaymentService.Application.Services.PaymentCheckoutService>();
 builder.Services.AddScoped<PaymentService.Application.Interfaces.IPaymentAppService,
@@ -30,7 +30,7 @@ builder.Services.AddPaymentSecurity(builder.Configuration);
 builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
 {
     options.InvalidModelStateResponseFactory = context => new BadRequestObjectResult(
-        new ApiError("VALIDATION_ERROR", "Dữ liệu request thiếu hoặc không đúng định dạng."));
+        new ApiError("VALIDATION_ERROR", "Dá»¯ liá»‡u request thiáº¿u hoáº·c khÃ´ng Ä‘Ãºng Ä‘á»‹nh dáº¡ng."));
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -38,7 +38,7 @@ builder.Services.AddSwaggerGen(options =>
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Type = SecuritySchemeType.Http, Scheme = "bearer", BearerFormat = "JWT",
-        Description = "Token user cho ví/truy vấn; token service có scope Payment cho API nội bộ."
+        Description = "Token user cho vÃ­/truy váº¥n; token service cÃ³ scope Payment cho API ná»™i bá»™."
     });
     options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
     {
@@ -67,3 +67,4 @@ app.MapControllers();
 app.Run();
 
 public partial class Program { }
+

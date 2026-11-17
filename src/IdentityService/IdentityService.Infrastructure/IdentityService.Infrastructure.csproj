@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\IdentityService.Application\IdentityService.Application.csproj" />
+    <ProjectReference Include="..\..\BuildingBlocks\SwiftRide.Messaging\SwiftRide.Messaging.csproj" />
   </ItemGroup>
 
   <ItemGroup>

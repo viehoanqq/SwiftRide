@@ -1,3 +1,4 @@
+﻿using SwiftRide.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,8 +13,10 @@ namespace IdentityService.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration, Microsoft.Extensions.Hosting.IHostEnvironment? environment = null)
     {
+
+        
         services.AddDbContext<UserDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString("UserDb")));
         services.AddScoped<IUserRepository, UserRepository>();
@@ -33,6 +36,9 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(10);
         }).AddHttpMessageHandler<WalletAuthorizationHandler>();
         services.AddHostedService<WalletRegistrationWorker>();
+        services.AddSwiftRideMessaging(configuration, environment);
+
+  
         return services;
     }
 
@@ -42,3 +48,5 @@ public static class DependencyInjection
         await scope.ServiceProvider.GetRequiredService<UserDbContext>().Database.MigrateAsync();
     }
 }
+
+

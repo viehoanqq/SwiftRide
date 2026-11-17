@@ -1,3 +1,4 @@
+﻿using SwiftRide.Messaging;
 using MatchingService.Application.Interfaces;
 using MatchingService.Infrastructure.Mongo;
 using MatchingService.Infrastructure.Repositories;
@@ -8,15 +9,16 @@ namespace MatchingService.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration, Microsoft.Extensions.Hosting.IHostEnvironment? environment = null)
     {
         services.AddSingleton(new MongoContext(configuration.GetConnectionString("MatchDb")!));
         services.AddScoped<IDriverRepository, DriverRepository>();
         services.AddScoped<IQuoteRepository, QuoteRepository>();
+        services.AddSwiftRideMessaging(configuration, environment);
         return services;
     }
 
-    // MongoDB không có migration: khi khởi động thì tạo index và seed tài xế nếu collection còn trống.
+    // MongoDB khÃ´ng cÃ³ migration: khi khá»Ÿi Ä‘á»™ng thÃ¬ táº¡o index vÃ  seed tÃ i xáº¿ náº¿u collection cÃ²n trá»‘ng.
     public static async Task InitializeDatabaseAsync(this IServiceProvider services)
     {
         var context = services.GetRequiredService<MongoContext>();
@@ -24,3 +26,5 @@ public static class DependencyInjection
         await SeedDrivers.ApplyAsync(context);
     }
 }
+
+
