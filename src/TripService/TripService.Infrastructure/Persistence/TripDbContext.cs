@@ -12,6 +12,7 @@ public class TripDbContext(DbContextOptions<TripDbContext> options) : DbContext(
     public DbSet<TripDriverOffer> TripDriverOffers => Set<TripDriverOffer>();
     public DbSet<TripStatusHistory> TripStatusHistory => Set<TripStatusHistory>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+    public DbSet<ProcessedPaymentResultMessage> ProcessedPaymentResults => Set<ProcessedPaymentResultMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

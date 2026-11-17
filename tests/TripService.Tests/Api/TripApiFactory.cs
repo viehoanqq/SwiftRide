@@ -86,6 +86,7 @@ public sealed class TripStore
 {
     public Dictionary<Guid, Trip> Committed { get; } = new();
     public List<IIntegrationEvent> Events { get; } = [];
+    public Dictionary<Guid, ProcessedPaymentResult> ProcessedPaymentResults { get; } = new();
     public Exception? SaveFailure { get; set; }
     public static Trip Copy(Trip trip)
     {
@@ -99,6 +100,7 @@ internal sealed class MemoryTripRepository(TripStore store) : ITripRepository
 {
     private readonly Dictionary<Guid, Trip> tracked = new();
     private readonly List<IIntegrationEvent> pendingEvents = [];
+    private readonly List<ProcessedPaymentResult> pendingPaymentResults = [];
     private static bool Active(Trip t) => t.Status is not
         (TripStatus.Paid or TripStatus.Cancelled or TripStatus.Failed or TripStatus.PaymentFailed);
     private Trip Track(Trip t)
@@ -109,6 +111,11 @@ internal sealed class MemoryTripRepository(TripStore store) : ITripRepository
     public Task AddAsync(Trip trip) { tracked[trip.Id] = trip; return Task.CompletedTask; }
     public void AddOffer(TripDriverOffer offer) { }
     public void AddOutboxEvent(IIntegrationEvent integrationEvent) => pendingEvents.Add(integrationEvent);
+    public Task<RideCompleted?> GetRideCompletedAsync(Guid eventId, CancellationToken ct) => Task.FromResult(
+        store.Events.OfType<RideCompleted>().FirstOrDefault(e => e.EventId == eventId));
+    public Task<ProcessedPaymentResult?> GetProcessedPaymentResultAsync(Guid eventId, CancellationToken ct) => Task.FromResult(
+        store.ProcessedPaymentResults.GetValueOrDefault(eventId));
+    public void AddProcessedPaymentResult(ProcessedPaymentResult result) => pendingPaymentResults.Add(result);
     public Task<Trip?> GetByIdAsync(Guid id) => Task.FromResult(
         store.Committed.TryGetValue(id, out var trip) ? Track(trip) : null);
     public Task<Trip?> GetActiveByRiderAsync(Guid riderId) => Task.FromResult(
@@ -131,6 +138,9 @@ internal sealed class MemoryTripRepository(TripStore store) : ITripRepository
         }
         store.Events.AddRange(pendingEvents);
         pendingEvents.Clear();
+        foreach (var result in pendingPaymentResults)
+            store.ProcessedPaymentResults.Add(result.EventId, result);
+        pendingPaymentResults.Clear();
         return Task.CompletedTask;
     }
 }

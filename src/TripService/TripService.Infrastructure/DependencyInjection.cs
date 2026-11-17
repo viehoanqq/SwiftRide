@@ -8,8 +8,11 @@ using TripService.Infrastructure.Persistence;
 
 using TripService.Application.Interfaces;          // thÃªm
 using TripService.Infrastructure.Clients;
+using TripService.Infrastructure.Messaging;
 using TripService.Infrastructure.Outbox;
 using TripService.Infrastructure.Repositories; 
+using TripService.Application.Services;
+using SwiftRide.Contracts.Events;
 
 namespace TripService.Infrastructure;
 
@@ -20,6 +23,7 @@ public static class DependencyInjection
         services.AddDbContext<TripDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString("TripDb")));
         services.AddScoped<ITripRepository, TripRepository>();     // thÃªm: dÃ¹ng DbContext nÃªn Scoped
+        services.AddScoped<TripPaymentResultHandler>();
 
         services.AddHttpContextAccessor();
         services.AddTransient<ForwardRequestHeadersHandler>();
@@ -44,7 +48,14 @@ public static class DependencyInjection
             client.Timeout = Timeout.InfiniteTimeSpan;
         }).AddHttpMessageHandler<ServiceAuthorizationHandler>();
 
-        services.AddSwiftRideMessaging(configuration, environment);
+        services.AddSwiftRideMessaging(configuration, environment,
+            configureConsumers: bus =>
+            {
+                bus.AddConsumer<PaymentSettledConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.TripPaymentSettled);
+                bus.AddConsumer<PaymentFailedConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.TripPaymentFailed);
+            });
         if (environment?.IsEnvironment("Testing") != true)
             services.AddHostedService<TripOutboxPublisher>();
         return services;

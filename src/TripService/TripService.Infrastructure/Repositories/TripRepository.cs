@@ -8,6 +8,7 @@ using Microsoft.Data.SqlClient;
 using System.Text.Json;
 using SwiftRide.Contracts.Events;
 using TripService.Infrastructure.Outbox;
+using TripService.Application.DTOs;
 
 namespace TripService.Infrastructure.Repositories;
 
@@ -41,6 +42,32 @@ public class TripRepository(TripDbContext db) : ITripRepository
             OccurredAt = integrationEvent.OccurredAt
         });
     }
+
+    public async Task<RideCompleted?> GetRideCompletedAsync(Guid eventId, CancellationToken cancellationToken)
+    {
+        var payload = await db.OutboxMessages.AsNoTracking()
+            .Where(m => m.Id == eventId && m.Type == nameof(RideCompleted))
+            .Select(m => m.Payload).SingleOrDefaultAsync(cancellationToken);
+        if (payload is null) return null;
+        var ride = JsonSerializer.Deserialize<RideCompleted>(payload);
+        return ride?.EventId == eventId ? ride : null;
+    }
+
+    public Task<ProcessedPaymentResult?> GetProcessedPaymentResultAsync(Guid eventId, CancellationToken cancellationToken) =>
+        db.ProcessedPaymentResults.AsNoTracking()
+            .Where(m => m.EventId == eventId)
+            .Select(m => new ProcessedPaymentResult(m.EventId, m.TripId, m.EventType, m.PayloadHash))
+            .SingleOrDefaultAsync(cancellationToken);
+
+    public void AddProcessedPaymentResult(ProcessedPaymentResult result) =>
+        db.ProcessedPaymentResults.Add(new ProcessedPaymentResultMessage
+        {
+            EventId = result.EventId,
+            TripId = result.TripId,
+            EventType = result.EventType,
+            PayloadHash = result.PayloadHash,
+            ProcessedAt = DateTime.UtcNow
+        });
 
     public Task<Trip?> GetByIdAsync(Guid id) =>
         WithDetails().FirstOrDefaultAsync(t => t.Id == id);

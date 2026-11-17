@@ -5,6 +5,7 @@ using TripService.Infrastructure.Persistence;
 using TripService.Infrastructure.Repositories;
 using TripService.Tests.Services;
 using SwiftRide.Contracts.Events;
+using TripService.Application.Services;
 
 namespace TripService.Tests.Persistence;
 
@@ -20,6 +21,46 @@ public sealed class SqlServerFactAttribute : FactAttribute
 
 public class TripRepositorySqlServerTests
 {
+    [SqlServerFact]
+    public async Task PaymentResult_CommitsTripHistoryClosedEventAndCheckpoint_AndReplayIsNoop()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var trip = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01, SeedData.Rider01);
+        trip.AcceptOffer(SeedData.Driver01);
+        trip.MarkEnRoute();
+        trip.MarkPickedUp();
+        trip.MarkDroppedOff();
+        var ride = new RideCompleted(Guid.NewGuid(), trip.Id, null, DateTime.UtcNow,
+            trip.Id, trip.RiderId, SeedData.Driver01, trip.Fare!.Price,
+            SwiftRide.Contracts.Payments.PaymentMethod.WALLET);
+        await using (var seed = database.Context())
+        {
+            seed.Trips.Add(trip);
+            var repository = new TripRepository(seed);
+            repository.AddOutboxEvent(ride);
+            await seed.SaveChangesAsync();
+        }
+
+        var settled = new PaymentSettled(Guid.NewGuid(), trip.Id, ride.EventId,
+            DateTime.UtcNow, trip.Id, Guid.NewGuid(), ride.Amount);
+        async Task Handle()
+        {
+            await using var db = database.Context();
+            await new TripPaymentResultHandler(new TripRepository(db)).HandleAsync(settled, CancellationToken.None);
+        }
+        await Handle();
+        await Handle();
+
+        await using var verify = database.Context();
+        var saved = (await new TripRepository(verify).GetByIdAsync(trip.Id))!;
+        Assert.Equal(TripStatus.Paid, saved.Status);
+        Assert.Equal(TripStatus.PaymentPending, saved.History[^1].FromStatus);
+        Assert.Equal(TripStatus.Paid, saved.History[^1].ToStatus);
+        Assert.Single(await verify.ProcessedPaymentResults.ToListAsync());
+        var closed = Assert.Single(await verify.OutboxMessages.Where(m => m.Type == nameof(TripClosed)).ToListAsync());
+        Assert.Equal(settled.EventId, System.Text.Json.JsonSerializer.Deserialize<TripClosed>(closed.Payload)!.CausationId);
+    }
+
     [SqlServerFact]
     public async Task ConcurrentAccepts_ForSameDriver_CommitOnlyOneTripAndEvent()
     {
