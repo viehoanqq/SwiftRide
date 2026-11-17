@@ -1,5 +1,8 @@
-﻿namespace SwiftRide.Contracts.Events;
+using System.Text.Json.Serialization;
 
+namespace SwiftRide.Contracts.Events;
+
+[method: JsonConstructor]
 public sealed record DriverRegistered(
     Guid DriverId,
     string Name,

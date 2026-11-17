@@ -8,7 +8,6 @@ using PaymentService.Application.Options;
 using Microsoft.Extensions.Options;
 SwiftRide.Messaging.DotEnvLoader.Load();
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddScoped<PaymentService.Application.Services.AccountRegistrationService>();
 
 builder.Services.AddOptions<PaymentOptions>()
     .Bind(builder.Configuration.GetRequiredSection(PaymentOptions.SectionName))

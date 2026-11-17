@@ -3,8 +3,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using PaymentService.Application.Interfaces;
+using PaymentService.Application.Services;
+using PaymentService.Infrastructure.Messaging;
 using PaymentService.Infrastructure.Persistence;
 using PaymentService.Infrastructure.Repositories;
+using SwiftRide.Contracts.Events;
 
 namespace PaymentService.Infrastructure;
 
@@ -20,11 +23,14 @@ public static class DependencyInjection
                 .UseSnakeCaseNamingConvention());
 
         services.AddScoped<IAccountRepository, AccountRepository>();
+        services.AddScoped<AccountRegistrationService>();
         services.AddScoped<IPaymentRepository, PaymentRepository>();
         services.AddScoped<ILedgerRepository, LedgerRepository>();
         services.AddScoped<IRefundRepository, RefundRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
-        services.AddSwiftRideMessaging(configuration, environment);
+        services.AddSwiftRideMessaging(configuration, environment,
+            configureConsumers: bus => bus.AddConsumer<UserRegisteredConsumer>()
+                .Endpoint(endpoint => endpoint.Name = QueueNames.PaymentUserRegistered));
         return services;
     }
 
