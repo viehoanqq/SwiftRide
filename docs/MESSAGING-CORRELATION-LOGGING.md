@@ -14,4 +14,6 @@
 
 The shared publish and consume filters record `EventId`, `MessageId`, `CorrelationId`, `CausationId`, `TripId` or `UserId`, `Queue`, `EventType`, and `Outcome`. Consume logs also record `RetryAttempt` (zero for the first attempt). A failed attempt is logged and rethrown so the configured retry and `_error` behavior still applies. A publish success log means the MassTransit publish task completed; the outbox publisher then marks its row processed.
 
+Console logs keep the structured English line and add one Vietnamese explanation directly below it. The explanation translates each of the seven event names into its business action. MassTransit's additional `IIntegrationEvent` publish topology no longer creates a duplicate application publish log.
+
 Use `CorrelationId` to find a workflow across services, `CausationId` to follow one event to its successor, and `MessageId`/`EventId` to inspect redelivery of a single message.

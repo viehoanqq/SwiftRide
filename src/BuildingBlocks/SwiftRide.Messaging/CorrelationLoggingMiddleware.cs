@@ -22,14 +22,15 @@ public sealed class CorrelationLoggingMiddleware(RequestDelegate next,
         try
         {
             await next(context);
-            logger.LogInformation("HTTP request completed. Outcome={Outcome} StatusCode={StatusCode} RequestCorrelationId={RequestCorrelationId}",
-                "Completed", context.Response.StatusCode, requestId);
+            logger.LogInformation("HTTP request completed. Outcome={Outcome} StatusCode={StatusCode} RequestCorrelationId={RequestCorrelationId}\n      Diễn giải: Yêu cầu {Method} {Path} đã hoàn tất với mã HTTP {StatusCode}; mã theo dõi yêu cầu: {RequestCorrelationId}.",
+                "Completed", context.Response.StatusCode, requestId, context.Request.Method,
+                context.Request.Path.Value, context.Response.StatusCode, requestId);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex,
-                "HTTP request failed. Outcome={Outcome} RequestCorrelationId={RequestCorrelationId}",
-                "Failed", requestId);
+                "HTTP request failed. Outcome={Outcome} RequestCorrelationId={RequestCorrelationId}\n      Diễn giải: Yêu cầu {Method} {Path} gặp lỗi; mã theo dõi yêu cầu: {RequestCorrelationId}.",
+                "Failed", requestId, context.Request.Method, context.Request.Path.Value, requestId);
             throw;
         }
     }

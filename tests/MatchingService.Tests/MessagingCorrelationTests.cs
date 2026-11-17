@@ -1,8 +1,10 @@
+using System.Collections.Concurrent;
 using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using SwiftRide.Contracts.Events;
 using SwiftRide.Messaging;
 
@@ -27,8 +29,10 @@ public class MessagingCorrelationTests
     [Fact]
     public async Task PublishedEvent_UsesWorkflowIdsInTransportEnvelope()
     {
+        using var logs = new CapturedLogs();
         using var host = Host.CreateDefaultBuilder()
             .UseEnvironment("Testing")
+            .ConfigureLogging(logging => logging.AddProvider(logs))
             .ConfigureServices((context, services) =>
             {
                 services.AddSingleton<ReceivedTrip>();
@@ -48,6 +52,9 @@ public class MessagingCorrelationTests
             Assert.Equal(eventId, received.MessageId);
             Assert.Equal(tripId, received.CorrelationId);
             Assert.Equal(eventId, received.EventId);
+            var publishLogs = logs.Messages.Where(text => text.StartsWith("Message published.")).ToArray();
+            Assert.Single(publishLogs);
+            Assert.Contains("Diễn giải: Đã phát tin 'Tài xế đã nhận chuyến", publishLogs[0]);
         }
         finally
         {
@@ -67,6 +74,32 @@ public class MessagingCorrelationTests
         {
             received.Value.TrySetResult((context.MessageId, context.CorrelationId, context.Message.EventId));
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CapturedLogs : ILoggerProvider
+    {
+        public ConcurrentQueue<string> Messages { get; } = new();
+
+        public ILogger CreateLogger(string categoryName) => new CaptureLogger(Messages);
+
+        public void Dispose() { }
+
+        private sealed class CaptureLogger(ConcurrentQueue<string> messages) : ILogger
+        {
+            public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+                Exception? exception, Func<TState, Exception?, string> formatter) =>
+                messages.Enqueue(formatter(state, exception));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static NullScope Instance { get; } = new();
+            public void Dispose() { }
         }
     }
 }
