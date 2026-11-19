@@ -22,6 +22,62 @@ namespace TripService.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("TripService.Application.Sagas.PaymentSagaInstance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("PaymentDeadlineAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("PaymentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProcessPaymentEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("RefundDeadlineAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("RefundPaymentEventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<Guid>("TripId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CorrelationId")
+                        .IsUnique();
+
+                    b.HasIndex("TripId")
+                        .IsUnique();
+
+                    b.ToTable("PaymentSagas", (string)null);
+                });
+
             modelBuilder.Entity("TripService.Domain.Entities.Trip", b =>
                 {
                     b.Property<Guid>("Id")
@@ -295,6 +351,15 @@ namespace TripService.Infrastructure.Persistence.Migrations
                     b.HasIndex("TripId");
 
                     b.ToTable("ProcessedPaymentResults", (string)null);
+                });
+
+            modelBuilder.Entity("TripService.Application.Sagas.PaymentSagaInstance", b =>
+                {
+                    b.HasOne("TripService.Domain.Entities.Trip", null)
+                        .WithOne()
+                        .HasForeignKey("TripService.Application.Sagas.PaymentSagaInstance", "TripId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("TripService.Domain.Entities.TripDriverOffer", b =>

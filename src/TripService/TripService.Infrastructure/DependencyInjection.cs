@@ -12,6 +12,8 @@ using TripService.Infrastructure.Messaging;
 using TripService.Infrastructure.Outbox;
 using TripService.Infrastructure.Repositories; 
 using TripService.Application.Services;
+using TripService.Application.Sagas;
+using TripService.Infrastructure.Sagas;
 using SwiftRide.Contracts.Events;
 
 namespace TripService.Infrastructure;
@@ -23,6 +25,7 @@ public static class DependencyInjection
         services.AddDbContext<TripDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString("TripDb")));
         services.AddScoped<ITripRepository, TripRepository>();     // thÃªm: dÃ¹ng DbContext nÃªn Scoped
+        services.AddScoped<IPaymentSagaRepository, PaymentSagaRepository>();
         services.AddScoped<TripPaymentResultHandler>();
 
         services.AddHttpContextAccessor();

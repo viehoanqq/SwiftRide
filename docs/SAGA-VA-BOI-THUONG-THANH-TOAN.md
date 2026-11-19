@@ -94,6 +94,14 @@ Quy tắc thuần đã được định nghĩa trong `TripService.Application/Sa
 
 Các cặp trạng thái/tín hiệu không có trong bảng bị từ chối. Consumer xử lý duplicate cùng `EventId` và payload bằng checkpoint **trước** khi gọi bảng chuyển trạng thái; `EventId` trùng payload khác là lỗi. `ApprovedRefundForVerifiedCharge` chỉ được phát sau khi application đã xác minh Payment `SUCCEEDED`, đúng Trip/amount và có quyết định được duyệt. Bảng thuần không truy vấn DB hoặc tự phê duyệt refund.
 
+### Persistence của Saga
+
+`PaymentSagaInstance` đã có model và bảng `PaymentSagas` trong SQL Server. Một Saga gắn với đúng một Trip: `TripId` và `CorrelationId` đều có unique index; `RowVersion` chặn hai worker ghi đè trạng thái của nhau. Bảng lưu `ProcessPaymentEventId`, deadline thanh toán, `PaymentId` nếu đã biết, `RefundPaymentEventId`/deadline refund nếu có, trạng thái và thời gian cập nhật.
+
+`PaymentSagaRepository` dùng chung `TripDbContext` với `TripRepository`. Khi bắt đầu Saga ở dropoff, thêm Saga và `ProcessPayment` vào context rồi gọi **một lần** `TripRepository.SaveChangesAsync`; nhánh `PaymentPending` hiện có transaction/khóa gán tài xế. Khi xử lý kết quả hay refund, thay đổi Saga, Trip, history, checkpoint và outbox trên cùng context rồi gọi **một lần** `PaymentSagaRepository.SaveChangesAsync` để commit/rollback toàn bộ. Không gọi hai `SaveChangesAsync` riêng cho hai repository.
+
+Trip outbox đã chấp nhận và publisher đã biết cách phát `ProcessPayment`/`RefundPayment`. Hiện chưa có code runtime tạo command, consumer hoặc scheduler mới; luồng `RideCompleted` hiện tại vẫn chạy. Khi chuyển sang `ProcessPayment`, cần đổi `TripPaymentResultHandler` để đối chiếu `CausationId` với command mới thay vì chỉ tìm `RideCompleted` như hiện nay.
+
 ## 4. Hợp đồng message cần thêm — Cần triển khai
 
 Luồng runtime hiện tại có bảy integration event. Các record Payment Saga `ProcessPayment`, `ProcessPaymentTimedOut`, `RefundPayment`, `PaymentRefunded`, `PaymentRefundFailed` đã được khai báo ở `SwiftRide.Contracts.Events`, nhưng **chưa có publisher/consumer sử dụng chúng**. `PaymentRefunded` dùng queue dự kiến `trip.payment-refunded`:

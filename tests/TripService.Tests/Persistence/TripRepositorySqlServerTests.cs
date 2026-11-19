@@ -6,6 +6,9 @@ using TripService.Infrastructure.Repositories;
 using TripService.Tests.Services;
 using SwiftRide.Contracts.Events;
 using TripService.Application.Services;
+using TripService.Application.Sagas;
+using TripService.Infrastructure.Sagas;
+using SwiftRide.Contracts.Payments;
 
 namespace TripService.Tests.Persistence;
 
@@ -21,6 +24,192 @@ public sealed class SqlServerFactAttribute : FactAttribute
 
 public class TripRepositorySqlServerTests
 {
+    [SqlServerFact]
+    public async Task SagaStart_CommitsTripHistoryAndProcessPaymentOutboxTogether()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var trip = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01, SeedData.Rider01);
+        trip.AcceptOffer(SeedData.Driver01);
+        trip.MarkEnRoute();
+        trip.MarkPickedUp();
+        await using (var seed = database.Context())
+        {
+            seed.Trips.Add(trip);
+            await seed.SaveChangesAsync();
+        }
+
+        var commandId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await using (var db = database.Context())
+        {
+            var repository = new TripRepository(db);
+            var sagaRepository = new PaymentSagaRepository(db);
+            var trackedTrip = (await repository.GetByIdAsync(trip.Id))!;
+            trackedTrip.MarkDroppedOff();
+            sagaRepository.Add(PaymentSagaInstance.Start(trip.Id, commandId, now.AddMinutes(2), now));
+            repository.AddOutboxEvent(new ProcessPayment(commandId, trip.Id, null, now,
+                trip.Id, trip.RiderId, SeedData.Driver01, trip.Fare!.Price,
+                SwiftRide.Contracts.Payments.PaymentMethod.WALLET,
+                PaymentProtocol.TripPaymentKey(trip.Id), now.AddMinutes(2)));
+            await repository.SaveChangesAsync();
+        }
+
+        await using var verify = database.Context();
+        var savedTrip = (await new TripRepository(verify).GetByIdAsync(trip.Id))!;
+        var saga = await verify.PaymentSagas.SingleAsync();
+        var outbox = await verify.OutboxMessages.SingleAsync();
+        Assert.Equal(TripStatus.PaymentPending, savedTrip.Status);
+        Assert.Contains(savedTrip.History, h => h.ToStatus == TripStatus.PaymentPending);
+        Assert.Equal(PaymentSagaState.AwaitingPayment, saga.State);
+        Assert.Equal(trip.Id, saga.CorrelationId);
+        Assert.NotEmpty(saga.RowVersion);
+        Assert.Equal(commandId, outbox.Id);
+        Assert.Equal(nameof(ProcessPayment), outbox.Type);
+    }
+
+    [SqlServerFact]
+    public async Task SagaStart_OutboxConflictRollsBackTripAndSaga()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var trip = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01, SeedData.Rider01);
+        trip.AcceptOffer(SeedData.Driver01);
+        trip.MarkEnRoute();
+        trip.MarkPickedUp();
+        var commandId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await using (var seed = database.Context())
+        {
+            seed.Trips.Add(trip);
+            seed.OutboxMessages.Add(new TripService.Infrastructure.Outbox.OutboxMessage
+            {
+                Id = commandId, Type = nameof(ProcessPayment), Payload = "{}",
+                CorrelationId = trip.Id, OccurredAt = now
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        await using (var db = database.Context())
+        {
+            var repository = new TripRepository(db);
+            var trackedTrip = (await repository.GetByIdAsync(trip.Id))!;
+            trackedTrip.MarkDroppedOff();
+            new PaymentSagaRepository(db).Add(PaymentSagaInstance.Start(
+                trip.Id, commandId, now.AddMinutes(2), now));
+            repository.AddOutboxEvent(new ProcessPayment(commandId, trip.Id, null, now,
+                trip.Id, trip.RiderId, SeedData.Driver01, trip.Fare!.Price,
+                SwiftRide.Contracts.Payments.PaymentMethod.WALLET,
+                PaymentProtocol.TripPaymentKey(trip.Id), now.AddMinutes(2)));
+            await Assert.ThrowsAsync<DbUpdateException>(() => repository.SaveChangesAsync());
+        }
+
+        await using var verify = database.Context();
+        Assert.Equal(TripStatus.PickedUp, (await verify.Trips.SingleAsync()).Status);
+        Assert.Empty(await verify.PaymentSagas.ToListAsync());
+        Assert.Single(await verify.OutboxMessages.ToListAsync());
+        Assert.DoesNotContain(await verify.TripStatusHistory.ToListAsync(),
+            h => h.ToStatus == TripStatus.PaymentPending);
+    }
+
+    [SqlServerFact]
+    public async Task SagaRowVersion_RejectsStaleConcurrentTransition()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var trip = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01, SeedData.Rider01);
+        var now = DateTime.UtcNow;
+        await using (var seed = database.Context())
+        {
+            seed.Trips.Add(trip);
+            seed.PaymentSagas.Add(PaymentSagaInstance.Start(trip.Id, Guid.NewGuid(),
+                now.AddMinutes(2), now));
+            await seed.SaveChangesAsync();
+        }
+
+        await using var first = database.Context();
+        await using var second = database.Context();
+        var winner = await first.PaymentSagas.SingleAsync();
+        var stale = await second.PaymentSagas.SingleAsync();
+        winner.Apply(PaymentSagaSignal.PaymentOutcomeUnknown, DateTime.UtcNow);
+        await new PaymentSagaRepository(first).SaveChangesAsync(CancellationToken.None);
+        stale.Apply(PaymentSagaSignal.PaymentSettled, DateTime.UtcNow);
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
+            new PaymentSagaRepository(second).SaveChangesAsync(CancellationToken.None));
+        await using var verify = database.Context();
+        Assert.Equal(PaymentSagaState.PaymentUncertain,
+            (await verify.PaymentSagas.AsNoTracking().SingleAsync()).State);
+    }
+
+    [SqlServerFact]
+    public async Task SagaTransition_OutboxConflictRollsBackSagaTripAndHistory()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var trip = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01, SeedData.Rider01);
+        trip.AcceptOffer(SeedData.Driver01);
+        trip.MarkEnRoute();
+        trip.MarkPickedUp();
+        trip.MarkDroppedOff();
+        var commandId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await using (var seed = database.Context())
+        {
+            seed.Trips.Add(trip);
+            seed.PaymentSagas.Add(PaymentSagaInstance.Start(trip.Id, commandId,
+                now.AddMinutes(2), now));
+            seed.OutboxMessages.Add(new TripService.Infrastructure.Outbox.OutboxMessage
+            {
+                Id = commandId, Type = nameof(ProcessPayment), Payload = "{}",
+                CorrelationId = trip.Id, OccurredAt = now
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        await using (var db = database.Context())
+        {
+            var repository = new TripRepository(db);
+            var trackedTrip = (await repository.GetByIdAsync(trip.Id))!;
+            var saga = (await new PaymentSagaRepository(db).GetByTripIdAsync(trip.Id,
+                CancellationToken.None))!;
+            trackedTrip.MarkPaid();
+            saga.Apply(PaymentSagaSignal.PaymentSettled, DateTime.UtcNow);
+            repository.AddOutboxEvent(new TripClosed(commandId, trip.Id, Guid.NewGuid(),
+                DateTime.UtcNow, trip.Id, SeedData.Driver01, "Paid"));
+            await Assert.ThrowsAsync<DbUpdateException>(() =>
+                new PaymentSagaRepository(db).SaveChangesAsync(CancellationToken.None));
+        }
+
+        await using var verify = database.Context();
+        Assert.Equal(TripStatus.PaymentPending, (await verify.Trips.SingleAsync()).Status);
+        Assert.Equal(PaymentSagaState.AwaitingPayment,
+            (await verify.PaymentSagas.SingleAsync()).State);
+        Assert.DoesNotContain(await verify.TripStatusHistory.ToListAsync(),
+            h => h.ToStatus == TripStatus.Paid);
+        Assert.Single(await verify.OutboxMessages.ToListAsync());
+    }
+
+    [SqlServerFact]
+    public async Task SagaCorrelation_AllowsOnlyOneInstancePerTrip()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var trip = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01, SeedData.Rider01);
+        await using (var seed = database.Context())
+        {
+            seed.Trips.Add(trip);
+            await seed.SaveChangesAsync();
+        }
+
+        await using (var db = database.Context())
+        {
+            var now = DateTime.UtcNow;
+            var repository = new PaymentSagaRepository(db);
+            repository.Add(PaymentSagaInstance.Start(trip.Id, Guid.NewGuid(), now.AddMinutes(2), now));
+            repository.Add(PaymentSagaInstance.Start(trip.Id, Guid.NewGuid(), now.AddMinutes(2), now));
+            await Assert.ThrowsAsync<DbUpdateException>(() =>
+                repository.SaveChangesAsync(CancellationToken.None));
+        }
+
+        await using var verify = database.Context();
+        Assert.Empty(await verify.PaymentSagas.ToListAsync());
+    }
+
     [SqlServerFact]
     public async Task PaymentResult_CommitsTripHistoryClosedEventAndCheckpoint_AndReplayIsNoop()
     {

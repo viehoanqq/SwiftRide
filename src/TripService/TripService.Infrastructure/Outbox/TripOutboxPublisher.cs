@@ -59,6 +59,12 @@ public sealed class TripOutboxPublisher(
                     case nameof(TripClosed):
                         await publisher.Publish(Deserialize<TripClosed>(message), cancellationToken);
                         break;
+                    case nameof(ProcessPayment):
+                        await publisher.Publish(Deserialize<ProcessPayment>(message), cancellationToken);
+                        break;
+                    case nameof(RefundPayment):
+                        await publisher.Publish(Deserialize<RefundPayment>(message), cancellationToken);
+                        break;
                     default:
                         throw new InvalidOperationException($"Unsupported Trip outbox type: {message.Type}");
                 }
