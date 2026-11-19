@@ -11,36 +11,50 @@
       "description": "Chỉ chạy sau chuyến Paid/Payment SUCCEEDED với adminToken được cấp riêng.",
       "item": [
         {
-          "name": "6.0 Login demo Admin (Development only)",
+          "name": "6.0 Login Admin",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{adminPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{adminPhone}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
             },
             "url": {
               "raw": "{{gatewayUrl}}/auth/login",
-              "host": ["{{gatewayUrl}}"],
-              "path": ["auth", "login"]
-            },
-            "description": "Identity Development tạo Admin mẫu khi khởi động: 0990000000 / 123456. Lưu accessToken vào adminToken."
-          },
-          "event": [{
-            "listen": "test",
-            "script": {
-              "type": "text/javascript",
-              "exec": [
-                "pm.test('Admin đăng nhập thành công (200)', () => pm.response.to.have.status(200));",
-                "if (pm.response.code === 200) {",
-                "  const result = pm.response.json();",
-                "  pm.test('Đúng vai trò Admin', () => pm.expect(result.user.role).to.eql('Admin'));",
-                "  if (result.user.role === 'Admin') pm.environment.set('adminToken', result.accessToken);",
-                "}"
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
               ]
+            },
+            "description": "Admin được cấp qua Identity:AdminBootstrap:Phone/Password hoặc quy trình quản trị. Lưu accessToken vào adminToken."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin đăng nhập thành công (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const result = pm.response.json();",
+                  "  pm.test('Đúng vai trò Admin', () => pm.expect(result.user.role).to.eql('Admin'));",
+                  "  if (result.user.role === 'Admin') pm.environment.set('adminToken', result.accessToken);",
+                  "}"
+                ]
+              }
             }
-          }],
+          ],
           "response": []
         },
         {
@@ -225,11 +239,32 @@
           "response": [],
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const url = pm.variables.replaceIn('{{gatewayUrl}}/trips/{{tripId}}');",
+                  "const token = pm.environment.get('riderToken');",
+                  "function waitForOutcome(attempt) {",
+                  "  pm.sendRequest({ url, method: 'GET', header: { Authorization: 'Bearer ' + token } }, (error, response) => {",
+                  "    if (error || !response || response.code !== 200) { console.warn('Không đọc được kết quả:', error || (response && response.code)); return; }",
+                  "    const status = response.json().status;",
+                  "    if (status === 'Refunded' || status === 'RefundNeedsAttention') { console.log('Trip refund status:', status); return; }",
+                  "    if (attempt < 30) { setTimeout(() => waitForOutcome(attempt + 1), 2000); return; }",
+                  "    console.warn('Refund vẫn đang xử lý sau khoảng 60 giây:', status);",
+                  "  });",
+                  "}",
+                  "waitForOutcome(1);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "exec": [
                   "pm.test('Xem chuyến (200)', () => pm.response.to.have.status(200));",
-                  "if (pm.response.code === 200) console.log('Refund trip status:', pm.response.json().status, '— poll đến Refunded hoặc RefundNeedsAttention');"
+                  "if (pm.response.code === 200) console.log('Refund trip status:', pm.response.json().status, '— poll đến Refunded hoặc RefundNeedsAttention');",
+                  "if (pm.response.code === 200) pm.test('Trip đã hoàn tiền', () => pm.expect(pm.response.json().status).to.eql('Refunded'));"
                 ],
                 "type": "text/javascript"
               }
@@ -267,11 +302,32 @@
           "response": [],
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const url = pm.variables.replaceIn('{{gatewayUrl}}/payments/by-trip/{{tripId}}');",
+                  "const token = pm.environment.get('riderToken');",
+                  "function waitForOutcome(attempt) {",
+                  "  pm.sendRequest({ url, method: 'GET', header: { Authorization: 'Bearer ' + token } }, (error, response) => {",
+                  "    if (error || !response || response.code !== 200) { console.warn('Không đọc được kết quả:', error || (response && response.code)); return; }",
+                  "    const status = response.json().status;",
+                  "    if (status === 'REFUNDED' || status === 'RefundNeedsAttention') { console.log('Payment refund status:', status); return; }",
+                  "    if (attempt < 30) { setTimeout(() => waitForOutcome(attempt + 1), 2000); return; }",
+                  "    console.warn('Refund vẫn đang xử lý sau khoảng 60 giây:', status);",
+                  "  });",
+                  "}",
+                  "waitForOutcome(1);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "exec": [
                   "pm.test('Xem payment (200)', () => pm.response.to.have.status(200));",
-                  "if (pm.response.code === 200) console.log('Refund payment status:', pm.response.json().status, '— poll đến REFUNDED');"
+                  "if (pm.response.code === 200) console.log('Refund payment status:', pm.response.json().status, '— poll đến REFUNDED');",
+                  "if (pm.response.code === 200) pm.test('Payment đã hoàn tiền', () => pm.expect(pm.response.json().status).to.eql('REFUNDED'));"
                 ],
                 "type": "text/javascript"
               }

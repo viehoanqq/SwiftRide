@@ -28,7 +28,7 @@ builder.Services.AddSwaggerGen(options =>
         Type = SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT",
-        Description = "DÃ¡n accessToken láº¥y tá»« POST /auth/login"
+        Description = "POST /auth/login"
     });
     options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
     {
@@ -41,15 +41,15 @@ var jwt = builder.Configuration.GetSection("Jwt");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.MapInboundClaims = false;            // giá»¯ nguyÃªn tÃªn claim "sub", "name", "role"
+        options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidIssuer = jwt["Issuer"],             // pháº£i khá»›p lÃºc kÃ½ trong JwtTokenService
+            ValidIssuer = jwt["Issuer"],
             ValidAudience = jwt["Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["Key"]!)),
-            ClockSkew = TimeSpan.FromSeconds(30),    // cho lá»‡ch giá» tá»‘i Ä‘a 30s (máº·c Ä‘á»‹nh 5 phÃºt)
+            ClockSkew = TimeSpan.FromSeconds(30),
             NameClaimType = "name",
-            RoleClaimType = "role"                   // Ä‘á»ƒ sau nÃ y [Authorize(Roles = "Driver")] Ä‘á»c Ä‘Ãºng
+            RoleClaimType = "role"
         };
         options.Events = new JwtBearerEvents
 {
@@ -91,12 +91,15 @@ app.UseMiddleware<SwiftRide.Messaging.CorrelationLoggingMiddleware>();
 
 if (!app.Environment.IsEnvironment("Testing"))
     await app.Services.MigrateDatabaseAsync();
-if (app.Environment.IsDevelopment())
+if (!app.Environment.IsEnvironment("Testing"))
 {
     using var scope = app.Services.CreateScope();
-    await DemoAdminSeeder.SeedAsync(scope.ServiceProvider.GetRequiredService<UserDbContext>());
+    await AdminBootstrapper.ProvisionAsync(
+        scope.ServiceProvider.GetRequiredService<UserDbContext>(),
+        scope.ServiceProvider.GetRequiredService<IPasswordHasher>(),
+        app.Configuration);
 }
-app.UseMiddleware<ExceptionMiddleware>();              // â† thÃªm, Ä‘áº·t TRÆ¯á»šC Swagger vÃ  MapControllers
+app.UseMiddleware<ExceptionMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -104,7 +107,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseAuthentication();     // â† THÃŠM: Ä‘á»c vÃ  kiá»ƒm tra token. PHáº¢I Ä‘á»©ng TRÆ¯á»šC UseAuthorization
+app.UseAuthentication();
 
 app.UseAuthorization();
 

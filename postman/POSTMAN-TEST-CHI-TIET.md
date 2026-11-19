@@ -1,12 +1,12 @@
 # Kiểm thử SwiftRide bằng Postman
 
-Import [collection chuyến đi](SwiftRide-EndToEnd.postman_collection.json), [collection refund](SwiftRide-RefundSaga.postman_collection.json) và [environment](SwiftRide-Gateway.postman_environment.json), chọn environment **SwiftRide - API Gateway (Local)**. Collection chuyến đi chỉ có folder `00`–`05` cho WALLET chuẩn; collection refund chạy riêng sau khi chuyến đã thanh toán.
+Import [collection WALLET](SwiftRide-EndToEnd.postman_collection.json), [collection CARD](SwiftRide-Card-EndToEnd.postman_collection.json), [collection refund](SwiftRide-RefundSaga.postman_collection.json) và [environment](SwiftRide-Gateway.postman_environment.json), chọn environment **SwiftRide - API Gateway (Local)**. Mỗi collection chạy riêng; refund chỉ bắt đầu sau khi chuyến đã thanh toán.
 
 ## Chuẩn bị
 
 Chạy RabbitMQ, SQL Server, PostgreSQL, MongoDB, bốn service và Gateway. Áp dụng migrations và seed. `GET {{gatewayUrl}}/health` phải trả 200 với cả bốn service Healthy. Seed mặc định: Rider `0900000001` (ví 500.000), Rider `0900000002` (ví 20.000), Driver `0910000001`, mật khẩu `123456`. Sửa biến environment nếu dữ liệu khác. Gateway mặc định `http://localhost:5000`.
 
-Identity chỉ khi chạy ở **Development** sẽ tạo Admin mẫu `0990000000` / `123456` lúc khởi động (idempotent; không tạo lại nếu số điện thoại đã tồn tại). Khởi động lại Identity sau khi cập nhật code, import lại environment và collection refund, rồi chạy request `6.0 Login demo Admin`: Postman tự lưu JWT vào biến secret `adminToken`. Có thể xác nhận response `user.role = "Admin"`. API đăng ký công khai vẫn chỉ nhận Rider/Driver; môi trường Production không tạo Admin mẫu.
+Để cấp Admin thật, đặt `Identity__AdminBootstrap__Phone` và `Identity__AdminBootstrap__Password` (tối thiểu 12 ký tự) trong cấu hình bảo mật của Identity, rồi khởi động lại. Bootstrap tạo tài khoản một lần ở mọi môi trường sau migration; nếu số điện thoại đã thuộc Rider/Driver, startup từ chối nâng quyền. Sau khi tạo, bỏ hai biến bootstrap khỏi cấu hình và khởi động lại; tài khoản Admin đã lưu trong DB. Không commit mật khẩu vào Git. Tài khoản mẫu cũ `0990000000 / 123456`, nếu đã được tạo bởi phiên bản trước, sẽ bị vô hiệu hóa; có thể dùng cùng số điện thoại với mật khẩu bootstrap mới để thay thế. Nhập cùng số điện thoại/mật khẩu vào biến Postman `adminPhone` và `adminPassword` (secret), chạy `6.0 Login Admin`; response phải có `user.role = "Admin"` và script tự lưu `adminToken`. API đăng ký công khai vẫn chỉ nhận Rider/Driver.
 
 ## Luồng WALLET thành công
 
@@ -29,15 +29,15 @@ Identity chỉ khi chạy ở **Development** sẽ tạo Admin mẫu `0990000000
 
 ## CARD giả lập: ba ca riêng
 
-Chỉ chạy ở Development/Testing. Bật `Payment__FakeCard__Enabled=true` cho Payment Service, khởi động lại; tạo **chuyến mới cho mỗi token**. Ở bước 3.4, dùng body `{"accept":true,"paymentMethod":"CARD","cardToken":"test-card-approved"}` rồi đổi token theo bảng:
+Collection CARD đã có đủ chuỗi tạo chuyến → confirm CARD → nhận chuyến → dropoff → kiểm Payment. Gateway CARD hiện tại là **giả lập**, chỉ được đăng ký ở Development/Testing. Bật `Payment__FakeCard__Enabled=true` cho Payment Service, khởi động lại; tạo **chuyến mới cho mỗi token**. Trong environment, đặt `cardToken`, `expectedTripStatus`, `expectedPaymentStatus` theo bảng rồi chạy collection CARD:
 
-| Token | Trip / Payment cuối | Kiểm thêm |
-|---|---|---|
-| `test-card-approved` | `Paid` / `SUCCEEDED` | Ví Rider không bị trừ; ledger Driver/Platform ghi phần chia |
-| `test-card-declined` | `PaymentFailed` / `FAILED` | Không có bút toán thu thành công; Matching giải phóng đúng Driver |
-| `test-card-unknown` | `PaymentPending` / `PENDING` | Sau deadline mặc định 120 giây, Saga thành `PaymentUncertain`, không tự thất bại hoặc refund |
+| `cardToken` | `expectedTripStatus` | `expectedPaymentStatus` | Kiểm thêm |
+|---|---|---|---|
+| `test-card-approved` | `Paid` | `SUCCEEDED` | Ví Rider không bị trừ; ledger Driver/Platform ghi phần chia |
+| `test-card-declined` | `PaymentFailed` | `FAILED` | Không có bút toán thu thành công; Matching giải phóng đúng Driver |
+| `test-card-unknown` | `PaymentPending` | `PENDING` | Sau deadline mặc định 120 giây, Saga thành `PaymentUncertain`, không tự thất bại hoặc refund |
 
-`PaymentUncertain` là trạng thái **nội bộ** trong `TripService.dbo.PaymentSagas`; `GET /trips/{id}` vẫn trả `PaymentPending`. Kiểm DB hoặc log Trip để xác nhận. Không chạy ca unknown trong Runner chung vì nó để lại chuyến đang chờ.
+`PaymentUncertain` là trạng thái **nội bộ** trong `TripService.dbo.PaymentSagas`; `GET /trips/{id}` vẫn trả `PaymentPending`. Kiểm DB hoặc log Trip để xác nhận. Ca unknown để lại chuyến đang chờ, vì thế chỉ chạy khi chủ động kiểm tra timeout. CARD trên Production cần adapter cổng thanh toán thật; collection này kiểm tra hợp đồng và gateway giả lập hiện có, không chứng minh đã tích hợp ngân hàng.
 
 ## Lỗi, tắt service và idempotency
 
@@ -48,7 +48,7 @@ Chỉ chạy ở Development/Testing. Bật `Payment__FakeCard__Enabled=true` ch
 
 ## Refund Saga (collection riêng, folder 06)
 
-Chỉ bắt đầu sau khi Trip `Paid` và Payment `SUCCEEDED`. Chạy `6.0 Login demo Admin` để lấy `adminToken`, rồi gọi:
+Chỉ bắt đầu sau khi Trip `Paid` và Payment `SUCCEEDED` ở WALLET hoặc CARD. Chạy `6.0 Login Admin` để lấy `adminToken`, rồi gọi:
 
 ```http
 POST {{gatewayUrl}}/trips/{{tripId}}/refund-approval
