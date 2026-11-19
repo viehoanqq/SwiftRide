@@ -52,7 +52,7 @@ không phải thông báo các API Payment đã hoạt động.
 - WALLET ghi ba bút toán: Rider -amount, Driver +driverAmount, Platform +platformAmount.
   CARD giả lập dùng GATEWAY làm tài khoản đối ứng -amount, không trừ ví Rider.
   Token Card giả lập và kết quả được định nghĩa trong [contract Card giả lập](CARD-GIA-LAP-CONTRACT.md); token thiếu/không hợp lệ trả 400.
-  TripFare hiện chưa lưu CardToken: không tự suy ra token từ PaymentMethod.Card.
+  TripFare lưu CardToken từ yêu cầu confirm của Rider và truyền qua RideCompleted; DTO đọc chuyến không trả token.
 - DriverAmount/PlatformAmount trong response là tổng CHARGE thực tế của tài khoản tương ứng;
   trả 0 nếu chưa ghi CHARGE. Khi REFUNDED vẫn giữ giá trị CHARGE gốc, FE phải xét status.
 - failureReason là mã ổn định (INSUFFICIENT_FUNDS/CARD_DECLINED) hoặc null, không chứa lỗi DB.

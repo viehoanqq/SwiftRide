@@ -14,4 +14,9 @@ public static class QueueNames
     public const string TripPaymentSettled = "trip.payment-settled";
     public const string TripPaymentFailed = "trip.payment-failed";
     public const string MatchingTripClosed = "matching.trip-closed";
+    public const string PaymentProcessPayment = "payment.process-payment";
+    public const string TripProcessPaymentTimedOut = "trip.process-payment-timed-out";
+    public const string PaymentRefundPayment = "payment.refund-payment";
+    public const string TripPaymentRefunded = "trip.payment-refunded";
+    public const string TripPaymentRefundFailed = "trip.payment-refund-failed";
 }

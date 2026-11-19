@@ -65,6 +65,9 @@ public class TripApiFlowTests
         var completed = Assert.Single(app.Store.Events.OfType<SwiftRide.Contracts.Events.RideCompleted>());
         Assert.Equal(ContractPaymentMethod.CARD, completed.PaymentMethod);
         Assert.Equal("test-card-approved", completed.CardToken);
+        var detailJson = await rider.GetStringAsync($"/trips/{id}");
+        Assert.DoesNotContain("cardToken", detailJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("test-card-approved", detailJson, StringComparison.Ordinal);
     }
 
     [Fact]

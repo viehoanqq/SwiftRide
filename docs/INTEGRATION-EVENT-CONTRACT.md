@@ -1,6 +1,6 @@
 ﻿# Integration event contract (v1)
 
-All seven events implement `IIntegrationEvent` in `SwiftRide.Contracts.Events`. The publisher assigns a nonempty `EventId` once and retains it on republish. `CorrelationId` is the business flow ID (`UserId` for registration, `TripId` for trip and payment). `CausationId` is the parent event's `EventId`, or `null` for an HTTP-originated action. `OccurredAt` is UTC at the time the business event occurred. `SchemaVersion` is `1`; incompatible payload changes require a new version. Consumers deduplicate using `EventId`.
+The original seven events implement `IIntegrationEvent` in `SwiftRide.Contracts.Events`. The publisher assigns a nonempty `EventId` once and retains it on republish. `CorrelationId` is the business flow ID (`UserId` for registration, `TripId` for trip and payment). `CausationId` is the parent event's `EventId`, or `null` for an HTTP-originated action. `OccurredAt` is UTC at the time the business event occurred. `SchemaVersion` is `1`; incompatible payload changes require a new version. Consumers deduplicate using `EventId`.
 
 | Event | Publisher | Consumer queue | Payload beyond metadata |
 | --- | --- | --- | --- |
@@ -19,3 +19,21 @@ Queue names are centralized in `QueueNames`. They are receive endpoint names, no
 The four APIs load the repository `.env` before building configuration. `RabbitMQ__*` keys bind to `RabbitMqOptions`; real environment variables take precedence. MassTransit uses durable RabbitMQ receive endpoints with publisher confirmations. Registered consumer endpoints get bounded exponential retry; `JsonException`, `ArgumentException`, and `FormatException` skip retry. After an unhandled consumer failure, MassTransit moves the message to `<queue>_error`. An unhandled message delivered to a queue goes to `<queue>_skipped`. Inspect the error queue and exception headers, fix the cause, then replay with the original `EventId`.
 
 The shared registration provides `configureConsumers` and `configureEndpoints` hooks. Each service must register its actual consumers and bind them to the queue constants when the event workflow is implemented. Merely adding the messaging foundation does not create the seven queues or publish events. Publisher confirmation acknowledges broker acceptance; database and publish atomicity still requires an outbox.
+
+## Payment Saga contract (chưa nối publisher/consumer)
+
+Các record Saga đã được khai báo trong `PaymentSagaEvents.cs`. Queue là tên endpoint dự kiến; chưa có consumer nên các queue mới chưa được tạo ở runtime. Saga dùng các event hiện có `RideCompleted`, `PaymentSettled`, `PaymentFailed` cùng các message mới dưới đây.
+
+| Message | Hướng | Queue | Payload thêm ngoài metadata |
+| --- | --- | --- | --- |
+| `ProcessPayment` | Trip Saga → Payment | `payment.process-payment` | `TripId`, `RiderId`, `DriverId`, `Amount`, `PaymentMethod`, `IdempotencyKey`, `DeadlineAt`, `CardToken?` |
+| `ProcessPaymentTimedOut` | Saga timer → Trip Saga | `trip.process-payment-timed-out` | `TripId`, `ProcessPaymentEventId`, `DeadlineAt` |
+| `RefundPayment` | Trip Saga → Payment | `payment.refund-payment` | `TripId`, `PaymentId`, `Amount`, `ReasonCode`, `IdempotencyKey` |
+| `PaymentRefunded` | Payment → Trip Saga | `trip.payment-refunded` | `TripId`, `PaymentId`, `Amount`, `ReasonCode` |
+| `PaymentRefundFailed` | Payment → Trip Saga | `trip.payment-refund-failed` | `TripId`, `PaymentId`, `FailureCode` |
+
+Mọi message dùng `CorrelationId = TripId`, `SchemaVersion = 1`, `OccurredAt` UTC. Khi phát phản hồi, `CausationId` trỏ đến `EventId` của command gây ra nó; timeout trỏ tới `ProcessPayment.EventId`. Retry cùng một command giữ nguyên `EventId`, payload, `DeadlineAt` và key. `ProcessPayment.IdempotencyKey = PaymentProtocol.TripPaymentKey(TripId)` để trùng với khóa checkout hiện có; `RefundPayment.IdempotencyKey = PaymentProtocol.TripRefundKey(TripId)`. Không tạo key mới theo lần retry.
+
+`ProcessPaymentTimedOut` chỉ báo đã qua hạn chờ; Saga phải tra Payment theo `TripId` trước khi quyết định, không tự coi là `PaymentFailed` và không tự refund. `PaymentRefundFailed` chỉ dành cho từ chối nghiệp vụ đã xác định và **không có refund được commit**; lỗi hạ tầng thì retry/đối soát, không phát sự kiện từ chối sai. `ReasonCode` chỉ nhận `INVALID_TRIP_CHARGE` hoặc `APPROVED_CUSTOMER_REFUND`. `FailureCode` dùng các mã trong `SagaRefundFailureCodes`; không đưa CardToken hoặc lời giải thích tự do vào kết quả refund.
+
+**Quy tắc chuyển luồng:** `ProcessPayment` dùng cùng key với `RideCompleted` hiện tại. Khi triển khai Saga, mỗi Trip chỉ có **một đường chủ động tạo kết quả thanh toán**. Không để cả `RideCompletedConsumer` và `ProcessPaymentConsumer` đồng thời phát `PaymentSettled`/`PaymentFailed` cho cùng Trip; idempotency của payment ngăn charge lặp nhưng không tự ngăn hai event kết quả khác `EventId`. Yêu cầu refund của Trip cũng phải đi qua một đường duy nhất; không gọi endpoint refund trực tiếp song song với `RefundPayment` cho cùng quyết định.

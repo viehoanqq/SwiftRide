@@ -37,6 +37,11 @@ public static class PaymentProtocol
     public const string RefundScope = "payments:refund";
 
     public static string TripPaymentKey(Guid tripId) => $"trip:{tripId:D}:payment:v1";
+
+    // One approved compensation per trip. Reuse this key on every command retry.
+    public static string TripRefundKey(Guid tripId) => tripId == Guid.Empty
+        ? throw new ArgumentException("TripId is required.", nameof(tripId))
+        : $"trip:{tripId:D}:refund:v1";
 }
 
 public static class PaymentErrorCodes

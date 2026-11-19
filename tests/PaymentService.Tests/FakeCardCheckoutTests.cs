@@ -134,7 +134,10 @@ public sealed class FakeCardCheckoutTests
             Assert.Equal(PaymentStatus.Refunded, payment.Status);
             Assert.Equal(6, payment.Entries.Count);
             Assert.All(payment.Entries.GroupBy(e => e.AccountId), entries => Assert.Equal(0m, entries.Sum(e => e.Amount)));
+            Assert.Equal(500_000m, (await db.Accounts.SingleAsync(a => a.OwnerId == RiderId.ToString("D"))).Balance);
             Assert.Equal(0m, (await db.Accounts.SingleAsync(a => a.OwnerId == Account.GatewayOwnerId)).Balance);
+            Assert.Equal(0m, (await db.Accounts.SingleAsync(a => a.OwnerId == DriverId.ToString("D"))).Balance);
+            Assert.Equal(0m, (await db.Accounts.SingleAsync(a => a.OwnerId == Account.PlatformOwnerId)).Balance);
             Assert.Single(await db.RefundReceipts.ToListAsync());
             Assert.Single(await db.FakeCardRefunds.ToListAsync());
         }
