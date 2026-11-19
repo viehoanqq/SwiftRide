@@ -46,11 +46,6 @@ Toàn bộ giao tiếp từ bên ngoài đi qua cổng biên duy nhất là **AP
 
 Toàn bộ tài liệu kiến trúc, hợp đồng giao tiếp, hướng dẫn kiểm thử và báo cáo học thuật của dự án được tổ chức đầy đủ tại [`docs/`](docs/) và [`postman/`](postman/):
 
-### Báo cáo Đồ án & Đặc tả Môn học
-- [`docs/SwiftRide-KienTrucPhanMem-Backend.tex`](docs/SwiftRide-KienTrucPhanMem-Backend.tex) — **Báo cáo LaTeX chuyên sâu phân hệ Backend** (môn Kiến trúc Phần mềm: ADRs, Clean Architecture, Schema 4 CSDL, State Machine, Outbox, Saga, SOLID, 11 Design Patterns, Trade-offs & FMEA).
-- [`docs/SwiftRide-BaoCaoDoAn.docx`](docs/SwiftRide-BaoCaoDoAn.docx) — Báo cáo tổng hợp đồ án định dạng Word.
-- [`docs/SwiftRide-DacTaYeuCau.pdf`](docs/SwiftRide-DacTaYeuCau.pdf) — Tài liệu đặc tả yêu cầu phần mềm (SRS).
-- [`docs/RideLite-KienTrucPhanMem.pdf`](docs/RideLite-KienTrucPhanMem.pdf) — Tài liệu định hướng bài toán tham khảo của môn học.
 
 ### Tài liệu Kiến trúc Phân hệ & Quy ước Phát triển
 - [`docs/KIEN-TRUC-TONG-THE-VA-CSDL.md`](docs/KIEN-TRUC-TONG-THE-VA-CSDL.md) — Kiến trúc tổng thể 4 Microservices, YARP Gateway, tách đôi `BuildingBlocks`, máy trạng thái 15 trạng thái, Schema vật lý 4 CSDL & ma trận khóa đồng thời.
