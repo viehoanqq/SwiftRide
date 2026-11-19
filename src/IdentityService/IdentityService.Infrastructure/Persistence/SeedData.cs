@@ -23,7 +23,8 @@ public static class SeedData
     {
         modelBuilder.Entity<Role>().HasData(
             new Role { Id = Role.RiderId, Name = "Rider" },
-            new Role { Id = Role.DriverId, Name = "Driver" });
+            new Role { Id = Role.DriverId, Name = "Driver" },
+            new Role { Id = Role.AdminId, Name = "Admin" });
 
         modelBuilder.Entity<User>().HasData(
             NewUser(Rider01, Role.RiderId, "Nguyễn Văn An", "0900000001"),

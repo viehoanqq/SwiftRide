@@ -49,6 +49,11 @@ namespace IdentityService.Infrastructure.Persistence.Migrations
                         {
                             Id = 2,
                             Name = "Driver"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Name = "Admin"
                         });
                 });
 
