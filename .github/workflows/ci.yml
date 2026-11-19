@@ -26,7 +26,9 @@ jobs:
           docker run -d --name swiftride-mongodb -p 27018:27017 mongo:7.0
 
       - name: Restore
-        run: dotnet restore SwiftRide.sln
+        run: |
+          cp .env.example .env
+          dotnet restore SwiftRide.sln
 
       - name: Build
         run: dotnet build SwiftRide.sln --no-restore -c Release

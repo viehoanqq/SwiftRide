@@ -1,4 +1,18 @@
+SwiftRide.Messaging.DotEnvLoader.Load();
 var builder = WebApplication.CreateBuilder(args);
+foreach (var (cluster, service) in new[]
+{
+    ("trip", "TripService"), ("matching", "MatchingService"),
+    ("payment", "PaymentService"), ("identity", "IdentityService")
+})
+{
+    var address = builder.Configuration[$"Services:{service}"];
+    if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) ||
+        (uri.Scheme != "http" && uri.Scheme != "https"))
+        throw new InvalidOperationException($"Services:{service} must contain an HTTP service URL.");
+    builder.Configuration[$"GatewayServices:{cluster}-service"] = address;
+    builder.Configuration[$"ReverseProxy:Clusters:{cluster}:Destinations:d1:Address"] = address;
+}
 
 builder.Services.AddControllers();
 builder.Services.AddHttpClient();   // cung cấp IHttpClientFactory để gọi sang các service

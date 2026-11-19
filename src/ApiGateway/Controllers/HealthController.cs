@@ -10,7 +10,7 @@ public class HealthController(IHttpClientFactory httpClientFactory, IConfigurati
     [HttpGet]
     public async Task<IActionResult> Get()
     {
-        var services = config.GetSection("Services").Get<Dictionary<string, string>>() ?? [];
+        var services = config.GetSection("GatewayServices").Get<Dictionary<string, string>>() ?? [];
         var client = httpClientFactory.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(5);
 
