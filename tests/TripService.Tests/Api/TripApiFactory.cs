@@ -16,6 +16,7 @@ using SwiftRide.Contracts.Payments;
 using SwiftRide.Contracts.Events;
 using TripService.Application.DTOs;
 using TripService.Application.Interfaces;
+using TripService.Application.Sagas;
 using TripService.Domain.Entities;
 using TripService.Domain.Enums;
 
@@ -56,11 +57,13 @@ public sealed class TripApiFactory : WebApplicationFactory<Program>
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<ITripRepository>();
+            services.RemoveAll<IPaymentSagaRepository>();
             services.RemoveAll<IMatchingClient>();
             services.RemoveAll<IDriverStatusClient>();
             services.RemoveAll<IPaymentClient>();
             services.AddSingleton(Store);
             services.AddScoped<ITripRepository, MemoryTripRepository>();
+            services.AddScoped<IPaymentSagaRepository, MemoryPaymentSagaRepository>();
             services.AddSingleton(Matching.Object);
             services.AddSingleton(StatusClient.Object);
             services.AddSingleton(PaymentClient.Object);
@@ -87,6 +90,8 @@ public sealed class TripStore
     public Dictionary<Guid, Trip> Committed { get; } = new();
     public List<IIntegrationEvent> Events { get; } = [];
     public Dictionary<Guid, ProcessedPaymentResult> ProcessedPaymentResults { get; } = new();
+    public Dictionary<Guid, PaymentSagaInstance> Sagas { get; } = new();
+    public List<PaymentSagaInstance> PendingSagas { get; } = [];
     public Exception? SaveFailure { get; set; }
     public static Trip Copy(Trip trip)
     {
@@ -138,9 +143,22 @@ internal sealed class MemoryTripRepository(TripStore store) : ITripRepository
         }
         store.Events.AddRange(pendingEvents);
         pendingEvents.Clear();
+        foreach (var saga in store.PendingSagas) store.Sagas[saga.TripId] = saga;
+        store.PendingSagas.Clear();
         foreach (var result in pendingPaymentResults)
             store.ProcessedPaymentResults.Add(result.EventId, result);
         pendingPaymentResults.Clear();
         return Task.CompletedTask;
     }
+}
+
+internal sealed class MemoryPaymentSagaRepository(TripStore store, ITripRepository trips)
+    : IPaymentSagaRepository
+{
+    public Task<PaymentSagaInstance?> GetByTripIdAsync(Guid tripId, CancellationToken ct) =>
+        Task.FromResult(store.Sagas.GetValueOrDefault(tripId));
+
+    public void Add(PaymentSagaInstance saga) => store.PendingSagas.Add(saga);
+
+    public Task SaveChangesAsync(CancellationToken ct) => trips.SaveChangesAsync();
 }

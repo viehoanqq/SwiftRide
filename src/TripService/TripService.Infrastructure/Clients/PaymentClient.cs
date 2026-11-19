@@ -85,6 +85,31 @@ public sealed class PaymentClient(HttpClient httpClient) : IPaymentClient
         });
     }
 
+    public async Task<RefundReceiptStatusResponse?> GetRefundByKeyAsync(
+        string idempotencyKey, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 100)
+            throw new ValidationException("Refund key không hợp lệ.");
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"/payments/refunds/by-key/{Uri.EscapeDataString(idempotencyKey)}");
+        return await SendAsync<RefundReceiptStatusResponse?>(request, cancellationToken,
+            async (response, ct) =>
+            {
+                if (response.StatusCode == HttpStatusCode.NotFound) return null;
+                if (response.StatusCode != HttpStatusCode.OK)
+                    throw new DownstreamException(502, PaymentErrorCodes.PaymentUnavailable,
+                        $"Payment trả về HTTP {(int)response.StatusCode} khi tra refund.");
+                var receipt = await response.Content.ReadFromJsonAsync<RefundReceiptStatusResponse>(
+                    cancellationToken: ct);
+                if (receipt is null || receipt.PaymentId == Guid.Empty ||
+                    string.IsNullOrWhiteSpace(receipt.ReasonCode) ||
+                    !Enum.IsDefined(receipt.Status))
+                    throw new DownstreamException(502, PaymentErrorCodes.InvalidPaymentResponse,
+                        "Payment trả về refund receipt không hợp lệ.");
+                return receipt;
+            });
+    }
+
     private async Task<T> SendAsync<T>(
         HttpRequestMessage httpRequest,
         CancellationToken cancellationToken,

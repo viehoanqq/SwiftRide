@@ -63,8 +63,18 @@ public sealed class PaymentSagaTimeoutDispatcher(TripDbContext db, ITripReposito
                 saga.TripId, saga.ProcessPaymentEventId, saga.PaymentDeadlineAt));
         }
 
+        // Refund timeout is an uncertainty marker, never a definitive refusal.
+        var dueRefunds = await db.PaymentSagas.FromSqlRaw("""
+            SELECT TOP ({0}) * FROM dbo.PaymentSagas WITH (UPDLOCK, READPAST, ROWLOCK)
+            WHERE State = 'Compensating'
+              AND RefundTimedOutAt IS NULL
+              AND RefundDeadlineAt <= SYSUTCDATETIME()
+            ORDER BY RefundDeadlineAt, Id
+            """, options.BatchSize).ToListAsync(cancellationToken);
+        foreach (var saga in dueRefunds) saga.RefundTimedOutAt = now;
+
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return due.Count;
+        return due.Count + dueRefunds.Count;
     }
 }

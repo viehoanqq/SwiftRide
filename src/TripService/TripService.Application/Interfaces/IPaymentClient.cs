@@ -9,4 +9,6 @@ public interface IPaymentClient
     Task<CreatePaymentResponse> CreateAsync(CreatePaymentRequest request, CancellationToken cancellationToken);
     // GET /payments/by-trip/{tripId} with service payments:read scope; 404 only => null.
     Task<PaymentDetailResponse?> GetByTripAsync(Guid tripId, CancellationToken cancellationToken);
+    Task<RefundReceiptStatusResponse?> GetRefundByKeyAsync(string idempotencyKey,
+        CancellationToken cancellationToken);
 }

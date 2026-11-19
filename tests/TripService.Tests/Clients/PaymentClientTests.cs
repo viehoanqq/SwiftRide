@@ -15,6 +15,27 @@ namespace TripService.Tests.Clients;
 
 public class PaymentClientTests
 {
+    [Fact]
+    public async Task GetRefundByKeyAsync_UsesInternalReceiptEndpoint()
+    {
+        var paymentId = Guid.NewGuid();
+        var handlerMock = new Mock<HttpMessageHandler>();
+        handlerMock.Protected().Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync((HttpRequestMessage request, CancellationToken _) =>
+            {
+                Assert.Equal("/payments/refunds/by-key/refund-key", request.RequestUri!.AbsolutePath);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new RefundReceiptStatusResponse(paymentId,
+                        "APPROVED_CUSTOMER_REFUND", PaymentState.REFUNDED))
+                };
+            });
+        var receipt = await CreateClient(handlerMock).GetRefundByKeyAsync(
+            "refund-key", CancellationToken.None);
+        Assert.Equal(paymentId, receipt!.PaymentId);
+    }
+
     private static CreatePaymentRequest SampleRequest(Guid? tripId = null)
     {
         var id = tripId ?? Guid.NewGuid();

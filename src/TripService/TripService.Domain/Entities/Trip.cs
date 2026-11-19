@@ -90,6 +90,12 @@ public class Trip
 
     public void MarkPaymentFailed() => CurrentState.MarkPaymentFailed(this);
 
+    public void MarkRefundPending() => CurrentState.MarkRefundPending(this);
+
+    public void MarkRefunded() => CurrentState.MarkRefunded(this);
+
+    public void MarkRefundNeedsAttention() => CurrentState.MarkRefundNeedsAttention(this);
+
     public void Cancel()
         => CurrentState.Cancel(this);
 

@@ -16,7 +16,8 @@ public class TripRepository(TripDbContext db) : ITripRepository
 {
     // Các trạng thái coi như chuyến đã kết thúc
     private static readonly TripStatus[] FinishedStatuses =
-        [TripStatus.Paid, TripStatus.Cancelled, TripStatus.Failed, TripStatus.PaymentFailed];
+        [TripStatus.Paid, TripStatus.Cancelled, TripStatus.Failed, TripStatus.PaymentFailed,
+            TripStatus.RefundPending, TripStatus.Refunded, TripStatus.RefundNeedsAttention];
 
     public async Task AddAsync(Trip trip) =>
         await db.Trips.AddAsync(trip);          // chỉ đưa vào context, chưa ghi DB

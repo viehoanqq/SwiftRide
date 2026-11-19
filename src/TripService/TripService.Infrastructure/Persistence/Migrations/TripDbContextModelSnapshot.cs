@@ -46,11 +46,34 @@ namespace TripService.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("ProcessPaymentEventId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime?>("RefundApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("RefundApprovedBy")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime?>("RefundDeadlineAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("RefundEvidenceReference")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("RefundFailureCode")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
                     b.Property<Guid?>("RefundPaymentEventId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("RefundReasonCode")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTime?>("RefundTimedOutAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()

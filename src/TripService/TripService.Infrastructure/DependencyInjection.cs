@@ -33,6 +33,8 @@ public static class DependencyInjection
             throw new InvalidOperationException("Payment Saga timeout poll seconds must be 1-300 and batch size 1-500.");
         services.AddSingleton(new PaymentSagaTimeoutOptions(TimeSpan.FromSeconds(timeoutPollSeconds), timeoutBatchSize));
         services.AddScoped<TripPaymentResultHandler>();
+        services.AddScoped<TripRefundCoordinator>();
+        services.AddScoped<TripRefundResultHandler>();
 
         services.AddHttpContextAccessor();
         services.AddTransient<ForwardRequestHeadersHandler>();
@@ -57,6 +59,16 @@ public static class DependencyInjection
             client.Timeout = Timeout.InfiniteTimeSpan;
         }).AddHttpMessageHandler<ServiceAuthorizationHandler>();
 
+        var paymentServiceUrl = configuration["Services:PaymentService"];
+        if (!Uri.TryCreate(paymentServiceUrl, UriKind.Absolute, out var paymentServiceUri) ||
+            (paymentServiceUri.Scheme != Uri.UriSchemeHttp && paymentServiceUri.Scheme != Uri.UriSchemeHttps))
+            throw new InvalidOperationException("Services:PaymentService must be an absolute HTTP or HTTPS URL.");
+        services.AddHttpClient<IPaymentClient, PaymentClient>(client =>
+        {
+            client.BaseAddress = paymentServiceUri;
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        }).AddHttpMessageHandler<ServiceAuthorizationHandler>();
+
         services.AddSwiftRideMessaging(configuration, environment,
             configureConsumers: bus =>
             {
@@ -66,11 +78,16 @@ public static class DependencyInjection
                     .Endpoint(endpoint => endpoint.Name = QueueNames.TripPaymentFailed);
                 bus.AddConsumer<ProcessPaymentTimedOutConsumer>()
                     .Endpoint(endpoint => endpoint.Name = QueueNames.TripProcessPaymentTimedOut);
+                bus.AddConsumer<PaymentRefundedConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.TripPaymentRefunded);
+                bus.AddConsumer<PaymentRefundFailedConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.TripPaymentRefundFailed);
             });
         if (environment?.IsEnvironment("Testing") != true)
         {
             services.AddHostedService<TripOutboxPublisher>();
             services.AddHostedService<PaymentSagaTimeoutScheduler>();
+            services.AddHostedService<PaymentSagaReconciler>();
         }
         return services;
     }

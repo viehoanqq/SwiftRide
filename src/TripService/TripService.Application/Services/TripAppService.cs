@@ -6,6 +6,8 @@ using TripService.Domain.Entities;
 using TripService.Domain.Enums;
 using TripService.Domain.Exceptions;
 using TripService.Application.Options;
+using TripService.Application.Sagas;
+using SwiftRide.Contracts.Payments;
 using ContractPaymentMethod = SwiftRide.Contracts.Payments.PaymentMethod;
 using PaymentMethod = TripService.Domain.Enums.PaymentMethod;
 
@@ -13,7 +15,8 @@ namespace TripService.Application.Services;
 
 public class TripAppService(ITripRepository trips, IMatchingClient matching,
     IDriverStatusClient driverStatusClient,
-    TripWorkflowOptions? workflowOptions = null) : ITripDriverWorkflow
+    TripWorkflowOptions? workflowOptions = null,
+    IPaymentSagaRepository? paymentSagas = null) : ITripDriverWorkflow
 {
     // MINH: tạo chuyến → /quote → Quoted hoặc Failed. 409 nếu đang có chuyến chưa kết thúc
     public async Task<CreateTripResponse> CreateAsync(Guid riderId, CreateTripRequest request)
@@ -333,9 +336,19 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
             PaymentMethod.Card => ContractPaymentMethod.CARD,
             _ => throw new InvalidTripStateException("INVALID_TRIP_STATE: Phương thức thanh toán không hợp lệ.")
         };
-        trips.AddOutboxEvent(new RideCompleted(
-            Guid.NewGuid(), trip.Id, null, DateTime.UtcNow,
-            trip.Id, trip.RiderId, driverId, trip.Fare.Price, paymentMethod, trip.Fare.CardToken));
+        if (paymentSagas is null)
+            throw new InvalidOperationException("Payment Saga repository is not configured.");
+        var now = DateTime.UtcNow;
+        var deadlineSeconds = (workflowOptions ?? new TripWorkflowOptions()).PaymentSagaDeadlineSeconds;
+        if (deadlineSeconds is < 10 or > 3600)
+            throw new InvalidOperationException("Payment Saga deadline must be 10-3600 seconds.");
+        var deadline = now.AddSeconds(deadlineSeconds);
+        var commandId = Guid.NewGuid();
+        paymentSagas.Add(PaymentSagaInstance.Start(trip.Id, commandId, deadline, now));
+        trips.AddOutboxEvent(new ProcessPayment(
+            commandId, trip.Id, null, now,
+            trip.Id, trip.RiderId, driverId, trip.Fare.Price, paymentMethod,
+            PaymentProtocol.TripPaymentKey(trip.Id), deadline, trip.Fare.CardToken));
         await trips.SaveChangesAsync();
         return new TripDriverActionResponse(trip.Status.ToString());
     }

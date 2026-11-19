@@ -13,6 +13,9 @@ public sealed class PaymentSagaConfiguration : IEntityTypeConfiguration<PaymentS
         builder.HasIndex(s => s.TripId).IsUnique();
         builder.HasIndex(s => s.CorrelationId).IsUnique();
         builder.Property(s => s.State).HasConversion<string>().HasMaxLength(32).IsUnicode(false);
+        builder.Property(s => s.RefundReasonCode).HasMaxLength(64).IsUnicode(false);
+        builder.Property(s => s.RefundEvidenceReference).HasMaxLength(200);
+        builder.Property(s => s.RefundFailureCode).HasMaxLength(64).IsUnicode(false);
         builder.Property(s => s.RowVersion).IsRowVersion();
         builder.HasOne<TripService.Domain.Entities.Trip>().WithOne()
             .HasForeignKey<PaymentSagaInstance>(s => s.TripId)

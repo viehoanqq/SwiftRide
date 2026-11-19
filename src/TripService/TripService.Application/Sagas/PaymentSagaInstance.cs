@@ -11,7 +11,13 @@ public sealed class PaymentSagaInstance
     public Guid? PaymentTimeoutEventId { get; set; }
     public Guid? PaymentId { get; set; }
     public Guid? RefundPaymentEventId { get; set; }
+    public string? RefundReasonCode { get; set; }
+    public string? RefundEvidenceReference { get; set; }
+    public Guid? RefundApprovedBy { get; set; }
+    public DateTime? RefundApprovedAt { get; set; }
     public DateTime? RefundDeadlineAt { get; set; }
+    public DateTime? RefundTimedOutAt { get; set; }
+    public string? RefundFailureCode { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public byte[] RowVersion { get; set; } = null!;
@@ -40,5 +46,30 @@ public sealed class PaymentSagaInstance
         if (next == State) return;
         State = next;
         UpdatedAt = now;
+    }
+
+    public void ApproveRefund(Guid paymentId, Guid approverId, string reasonCode,
+        string evidenceReference,
+        Guid commandId, DateTime deadlineAt, DateTime now)
+    {
+        if (State is not (PaymentSagaState.Completed or PaymentSagaState.NeedsAttention) ||
+            PaymentId != paymentId ||
+            approverId == Guid.Empty || commandId == Guid.Empty ||
+            string.IsNullOrWhiteSpace(reasonCode) ||
+            string.IsNullOrWhiteSpace(evidenceReference) || evidenceReference.Length > 200 ||
+            State == PaymentSagaState.NeedsAttention &&
+                (RefundReasonCode != reasonCode || RefundEvidenceReference != evidenceReference) ||
+            now.Kind != DateTimeKind.Utc ||
+            deadlineAt.Kind != DateTimeKind.Utc || deadlineAt <= now)
+            throw new InvalidOperationException("Refund requires a verified completed payment and approval.");
+        Apply(PaymentSagaSignal.ApprovedRefundForVerifiedCharge, now);
+        RefundPaymentEventId = commandId;
+        RefundReasonCode = reasonCode;
+        RefundEvidenceReference = evidenceReference;
+        RefundApprovedBy = approverId;
+        RefundApprovedAt = now;
+        RefundDeadlineAt = deadlineAt;
+        RefundTimedOutAt = null;
+        RefundFailureCode = null;
     }
 }

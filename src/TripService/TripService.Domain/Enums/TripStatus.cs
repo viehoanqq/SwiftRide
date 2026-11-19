@@ -13,5 +13,8 @@ public enum TripStatus
     Paid,
     Cancelled,
     Failed,
-    PaymentFailed
+    PaymentFailed,
+    RefundPending,
+    Refunded,
+    RefundNeedsAttention
 }

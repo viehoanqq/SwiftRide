@@ -9,6 +9,8 @@ using TripService.Application.Services;
 using TripService.Application.Sagas;
 using TripService.Infrastructure.Sagas;
 using SwiftRide.Contracts.Payments;
+using Moq;
+using TripService.Application.Interfaces;
 
 namespace TripService.Tests.Persistence;
 
@@ -24,6 +26,222 @@ public sealed class SqlServerFactAttribute : FactAttribute
 
 public class TripRepositorySqlServerTests
 {
+    [SqlServerFact]
+    public async Task RefundTimeout_MarksUncertainWithoutInventingFailure()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var trip = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01, SeedData.Rider01);
+        trip.AcceptOffer(SeedData.Driver01);
+        trip.MarkEnRoute();
+        trip.MarkPickedUp();
+        trip.MarkDroppedOff();
+        trip.MarkPaid();
+        trip.MarkRefundPending();
+        var now = DateTime.UtcNow;
+        var paymentId = Guid.NewGuid();
+        var saga = PaymentSagaInstance.Start(trip.Id, Guid.NewGuid(),
+            now.AddMinutes(-1), now.AddMinutes(-2));
+        saga.PaymentId = paymentId;
+        saga.Apply(PaymentSagaSignal.PaymentSettled, now);
+        saga.ApproveRefund(paymentId, Guid.NewGuid(), SagaRefundReasonCodes.ApprovedCustomerRefund,
+            "case-refund-timeout",
+            Guid.NewGuid(), now.AddMilliseconds(100), now);
+        await using (var seed = database.Context())
+        {
+            seed.Trips.Add(trip);
+            seed.PaymentSagas.Add(saga);
+            await seed.SaveChangesAsync();
+        }
+        await Task.Delay(150);
+
+        await using (var db = database.Context())
+            Assert.Equal(1, await new PaymentSagaTimeoutDispatcher(db, new TripRepository(db),
+                new PaymentSagaTimeoutOptions(TimeSpan.FromSeconds(5), 50))
+                .DispatchAsync(CancellationToken.None));
+        await using var verify = database.Context();
+        var saved = await verify.PaymentSagas.SingleAsync();
+        Assert.Equal(PaymentSagaState.Compensating, saved.State);
+        Assert.NotNull(saved.RefundTimedOutAt);
+        Assert.Empty(await verify.OutboxMessages.ToListAsync());
+    }
+
+    [SqlServerFact]
+    public async Task UncertainPayment_ReconcilesVerifiedSuccess_AndIgnoresLateMatchingEvent()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var trip = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01, SeedData.Rider01);
+        trip.AcceptOffer(SeedData.Driver01);
+        trip.MarkEnRoute();
+        trip.MarkPickedUp();
+        trip.MarkDroppedOff();
+        var now = DateTime.UtcNow;
+        var commandId = Guid.NewGuid();
+        var paymentId = Guid.NewGuid();
+        var saga = PaymentSagaInstance.Start(trip.Id, commandId, now.AddMinutes(2), now);
+        saga.Apply(PaymentSagaSignal.PaymentOutcomeUnknown, now);
+        await using (var seed = database.Context())
+        {
+            seed.Trips.Add(trip);
+            seed.PaymentSagas.Add(saga);
+            await seed.SaveChangesAsync();
+        }
+
+        await using (var db = database.Context())
+            await new TripPaymentResultHandler(new TripRepository(db), new PaymentSagaRepository(db))
+                .ReconcileAsync(new PaymentDetailResponse(paymentId, trip.Id, trip.Fare!.Price,
+                    SwiftRide.Contracts.Payments.PaymentMethod.WALLET, PaymentState.SUCCEEDED,
+                    1, null, 40000m, 10000m), commandId, CancellationToken.None);
+        await using (var db = database.Context())
+            await new TripPaymentResultHandler(new TripRepository(db), new PaymentSagaRepository(db))
+                .HandleAsync(new PaymentSettled(Guid.NewGuid(), trip.Id, commandId,
+                    DateTime.UtcNow, trip.Id, paymentId, trip.Fare!.Price), CancellationToken.None);
+
+        await using var verify = database.Context();
+        Assert.Equal(PaymentSagaState.Completed, (await verify.PaymentSagas.SingleAsync()).State);
+        Assert.Equal(TripStatus.Paid, (await verify.Trips.SingleAsync()).Status);
+        Assert.Single(await verify.OutboxMessages.Where(m => m.Type == nameof(TripClosed)).ToListAsync());
+        Assert.Equal(2, await verify.ProcessedPaymentResults.CountAsync());
+    }
+
+    [SqlServerFact]
+    public async Task RefundFailure_MarksAttentionWithoutReclosingTrip()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var trip = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01, SeedData.Rider01);
+        trip.AcceptOffer(SeedData.Driver01);
+        trip.MarkEnRoute();
+        trip.MarkPickedUp();
+        trip.MarkDroppedOff();
+        trip.MarkPaid();
+        trip.MarkRefundPending();
+        var now = DateTime.UtcNow;
+        var commandId = Guid.NewGuid();
+        var paymentId = Guid.NewGuid();
+        var refundId = Guid.NewGuid();
+        var saga = PaymentSagaInstance.Start(trip.Id, commandId, now.AddMinutes(2), now);
+        saga.PaymentId = paymentId;
+        saga.Apply(PaymentSagaSignal.PaymentSettled, now);
+        saga.ApproveRefund(paymentId, Guid.NewGuid(), SagaRefundReasonCodes.ApprovedCustomerRefund,
+            "case-refund-failed",
+            refundId, now.AddMinutes(2), now);
+        await using (var seed = database.Context())
+        {
+            seed.Trips.Add(trip);
+            seed.PaymentSagas.Add(saga);
+            await seed.SaveChangesAsync();
+        }
+
+        var failed = new PaymentRefundFailed(Guid.NewGuid(), trip.Id, refundId,
+            DateTime.UtcNow, trip.Id, paymentId,
+            SagaRefundFailureCodes.InsufficientRecipientFunds);
+        await using (var db = database.Context())
+            await new TripRefundResultHandler(new TripRepository(db), new PaymentSagaRepository(db))
+                .HandleAsync(failed, CancellationToken.None);
+
+        await using var verify = database.Context();
+        Assert.Equal(TripStatus.RefundNeedsAttention, (await verify.Trips.SingleAsync()).Status);
+        var savedSaga = await verify.PaymentSagas.SingleAsync();
+        Assert.Equal(PaymentSagaState.NeedsAttention, savedSaga.State);
+        Assert.Equal(SagaRefundFailureCodes.InsufficientRecipientFunds, savedSaga.RefundFailureCode);
+        Assert.Empty(await verify.OutboxMessages.ToListAsync());
+        Assert.Single(await verify.ProcessedPaymentResults.ToListAsync());
+
+        var paymentClient = new Mock<IPaymentClient>();
+        paymentClient.Setup(p => p.GetByTripAsync(trip.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PaymentDetailResponse(paymentId, trip.Id, trip.Fare!.Price,
+                SwiftRide.Contracts.Payments.PaymentMethod.WALLET, PaymentState.SUCCEEDED,
+                1, null, 40000m, 10000m));
+        await using (var retryDb = database.Context())
+            Assert.Equal("RefundPending", await new TripRefundCoordinator(
+                new TripRepository(retryDb), new PaymentSagaRepository(retryDb),
+                paymentClient.Object).ApproveAsync(trip.Id, Guid.NewGuid(),
+                SagaRefundReasonCodes.ApprovedCustomerRefund, "case-refund-failed",
+                CancellationToken.None));
+        await using var retried = database.Context();
+        var newCommand = await retried.PaymentSagas.SingleAsync();
+        Assert.Equal(PaymentSagaState.Compensating, newCommand.State);
+        Assert.Null(newCommand.RefundFailureCode);
+        Assert.NotEqual(refundId, newCommand.RefundPaymentEventId);
+        Assert.Single(await retried.OutboxMessages.Where(m => m.Type == nameof(RefundPayment)).ToListAsync());
+    }
+
+    [SqlServerFact]
+    public async Task SagaPaymentAndRefundResults_CommitTripHistoryAndOutboxWithoutSecondClose()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var trip = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01, SeedData.Rider01);
+        trip.AcceptOffer(SeedData.Driver01);
+        trip.MarkEnRoute();
+        trip.MarkPickedUp();
+        var commandId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await using (var seed = database.Context())
+        {
+            seed.Trips.Add(trip);
+            await seed.SaveChangesAsync();
+        }
+        await using (var db = database.Context())
+        {
+            var repository = new TripRepository(db);
+            (await repository.GetByIdAsync(trip.Id))!.MarkDroppedOff();
+            new PaymentSagaRepository(db).Add(PaymentSagaInstance.Start(
+                trip.Id, commandId, now.AddMinutes(2), now));
+            repository.AddOutboxEvent(new ProcessPayment(commandId, trip.Id, null, now,
+                trip.Id, trip.RiderId, SeedData.Driver01, trip.Fare!.Price,
+                SwiftRide.Contracts.Payments.PaymentMethod.WALLET,
+                PaymentProtocol.TripPaymentKey(trip.Id), now.AddMinutes(2)));
+            await repository.SaveChangesAsync();
+        }
+
+        var paymentId = Guid.NewGuid();
+        var settled = new PaymentSettled(Guid.NewGuid(), trip.Id, commandId, DateTime.UtcNow,
+            trip.Id, paymentId, trip.Fare!.Price);
+        await using (var db = database.Context())
+            await new TripPaymentResultHandler(new TripRepository(db), new PaymentSagaRepository(db))
+                .HandleAsync(settled, CancellationToken.None);
+
+        var paymentClient = new Mock<IPaymentClient>();
+        paymentClient.Setup(p => p.GetByTripAsync(trip.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PaymentDetailResponse(paymentId, trip.Id, trip.Fare.Price,
+                SwiftRide.Contracts.Payments.PaymentMethod.WALLET, PaymentState.SUCCEEDED,
+                1, null, 40000m, 10000m));
+        await using (var db = database.Context())
+            Assert.Equal("RefundPending", await new TripRefundCoordinator(new TripRepository(db),
+                new PaymentSagaRepository(db), paymentClient.Object).ApproveAsync(trip.Id,
+                Guid.NewGuid(), SagaRefundReasonCodes.ApprovedCustomerRefund,
+                "case-approved", CancellationToken.None));
+
+        Guid refundCommandId;
+        await using (var db = database.Context())
+        {
+            var saga = await db.PaymentSagas.SingleAsync();
+            refundCommandId = saga.RefundPaymentEventId!.Value;
+            Assert.Equal(PaymentSagaState.Compensating, saga.State);
+            Assert.Equal("case-approved", saga.RefundEvidenceReference);
+            Assert.Equal(TripStatus.RefundPending, (await db.Trips.SingleAsync()).Status);
+            Assert.Single(await db.OutboxMessages.Where(m => m.Type == nameof(TripClosed)).ToListAsync());
+        }
+        var refunded = new PaymentRefunded(Guid.NewGuid(), trip.Id, refundCommandId,
+            DateTime.UtcNow, trip.Id, paymentId, trip.Fare.Price,
+            SagaRefundReasonCodes.ApprovedCustomerRefund);
+        await using (var db = database.Context())
+            await new TripRefundResultHandler(new TripRepository(db), new PaymentSagaRepository(db))
+                .HandleAsync(refunded, CancellationToken.None);
+        await using (var db = database.Context())
+            await new TripRefundResultHandler(new TripRepository(db), new PaymentSagaRepository(db))
+                .HandleAsync(refunded with { EventId = Guid.NewGuid() }, CancellationToken.None);
+        await using (var db = database.Context())
+            await new TripRefundResultHandler(new TripRepository(db), new PaymentSagaRepository(db))
+                .HandleAsync(refunded, CancellationToken.None);
+
+        await using var verify = database.Context();
+        Assert.Equal(PaymentSagaState.Compensated,
+            (await verify.PaymentSagas.SingleAsync()).State);
+        Assert.Equal(TripStatus.Refunded, (await verify.Trips.SingleAsync()).Status);
+        Assert.Single(await verify.OutboxMessages.Where(m => m.Type == nameof(TripClosed)).ToListAsync());
+        Assert.Equal(3, await verify.ProcessedPaymentResults.CountAsync());
+    }
+
     [SqlServerFact]
     public async Task PaymentTimeout_QueuesOnceAndSkipsCompletedSaga()
     {
@@ -445,7 +663,7 @@ public class TripRepositorySqlServerTests
             try
             {
                 await using var db = database.Context();
-                await db.Database.EnsureCreatedAsync(); // Isolated repository schema, without cross-database cutover.
+                await db.Database.EnsureCreatedAsync(); // Isolated repository schema.
                 return database;
             }
             catch

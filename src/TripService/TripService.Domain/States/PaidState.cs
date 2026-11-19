@@ -8,4 +8,5 @@ public sealed class PaidState : TripState
     public override TripStatus Status => TripStatus.Paid;
     // Replayed result: no second history entry, no timestamp change.
     public override void MarkPaid(Trip trip) { }
+    public override void MarkRefundPending(Trip trip) => trip.TransitionTo(TripStatus.RefundPending);
 }

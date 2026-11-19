@@ -5,12 +5,14 @@ using TripService.Application.DTOs;
 using TripService.Application.Services;
 using TripService.Application.Interfaces;
 using TripService.Application.Exceptions;
+using TripService.Application.Sagas;
 namespace TripService.Api.Controllers;
 
 [ApiController]
 [Route("trips")]
 [Authorize]
-public class TripsController(TripAppService tripService, ITripDriverWorkflow tripWorkflow) : ControllerBase
+public class TripsController(TripAppService tripService, ITripDriverWorkflow tripWorkflow,
+    TripRefundCoordinator refunds) : ControllerBase
 {
     private Guid UserId => Guid.TryParse(User.FindFirstValue("sub"), out var id) && id != Guid.Empty
         ? id : throw new UnauthorizedException("INVALID_TOKEN_SUBJECT", "Token kh?ng c? ID ng??i d?ng h?p l?.");
@@ -118,5 +120,16 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     {
         var result = await tripWorkflow.MarkDroppedOffAsync(id, UserId, cancellationToken);
         return Ok(result);
+    }
+
+    [HttpPost("{id:guid}/refund-approval")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(TripDriverActionResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<TripDriverActionResponse>> ApproveRefund(Guid id,
+        ApproveTripRefundRequest request, CancellationToken cancellationToken)
+    {
+        var status = await refunds.ApproveAsync(id, UserId, request.ReasonCode,
+            request.EvidenceReference, cancellationToken);
+        return Ok(new TripDriverActionResponse(status));
     }
 }

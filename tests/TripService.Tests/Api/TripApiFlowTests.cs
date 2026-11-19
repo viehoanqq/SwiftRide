@@ -2,12 +2,15 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using SwiftRide.Contracts.Payments;
 using TripService.Application.DTOs;
 using TripService.Application.Exceptions;
 using TripService.Application.Interfaces;
 using TripService.Domain.Enums;
+using TripService.Application.Services;
+using SwiftRide.Contracts.Events;
 using ContractPaymentMethod = SwiftRide.Contracts.Payments.PaymentMethod;
 
 namespace TripService.Tests.Api;
@@ -62,7 +65,7 @@ public class TripApiFlowTests
         await AssertState(await driver.PostAsync($"/trips/{id}/pickup", null), "PickedUp");
         await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "PaymentPending");
 
-        var completed = Assert.Single(app.Store.Events.OfType<SwiftRide.Contracts.Events.RideCompleted>());
+        var completed = Assert.Single(app.Store.Events.OfType<SwiftRide.Contracts.Events.ProcessPayment>());
         Assert.Equal(ContractPaymentMethod.CARD, completed.PaymentMethod);
         Assert.Equal("test-card-approved", completed.CardToken);
         var detailJson = await rider.GetStringAsync($"/trips/{id}");
@@ -99,7 +102,7 @@ public class TripApiFlowTests
         for (var i = 1; i < detail.History.Count; i++) Assert.Equal(detail.History[i - 1].To, detail.History[i].From);
         Assert.Equal(app.Driver, detail.Driver!.Id);
         var accepted = Assert.Single(app.Store.Events.OfType<SwiftRide.Contracts.Events.TripAccepted>());
-        var completed = Assert.Single(app.Store.Events.OfType<SwiftRide.Contracts.Events.RideCompleted>());
+        var completed = Assert.Single(app.Store.Events.OfType<SwiftRide.Contracts.Events.ProcessPayment>());
         Assert.Equal(id, accepted.TripId);
         Assert.Equal(id, completed.TripId);
         Assert.Equal(app.Rider, completed.RiderId);
@@ -333,7 +336,7 @@ public class TripApiFlowTests
     }
 
     [Fact]
-    public async Task Dropoff_PersistsPaymentPendingAndOneRideCompletedOnReplay()
+    public async Task Dropoff_PersistsPaymentPendingAndOneProcessPaymentOnReplay()
     {
         using var app = new TripApiFactory();
         using var rider = app.Client(app.Rider, "Rider");
@@ -348,7 +351,7 @@ public class TripApiFlowTests
 
         Assert.Equal(historyCount, app.Store.Committed[id].History.Count);
         Assert.Equal(TripStatus.PaymentPending, app.Store.Committed[id].Status);
-        var completed = Assert.Single(app.Store.Events.OfType<SwiftRide.Contracts.Events.RideCompleted>());
+        var completed = Assert.Single(app.Store.Events.OfType<SwiftRide.Contracts.Events.ProcessPayment>());
         Assert.Equal(id, completed.CorrelationId);
         Assert.Equal(50000m, completed.Amount);
         Assert.NotEqual(Guid.Empty, completed.EventId);
@@ -367,6 +370,44 @@ public class TripApiFlowTests
 
         await Error(await driver.PostAsync($"/trips/{id}/dropoff", null), HttpStatusCode.Conflict, "CONCURRENCY_CONFLICT");
         Assert.Equal(TripStatus.PickedUp, app.Store.Committed[id].Status);
-        Assert.Empty(app.Store.Events.OfType<SwiftRide.Contracts.Events.RideCompleted>());
+        Assert.Empty(app.Store.Events.OfType<SwiftRide.Contracts.Events.ProcessPayment>());
+    }
+
+    [Fact]
+    public async Task RefundApproval_RequiresAdminAndVerifiedPayment()
+    {
+        using var app = new TripApiFactory();
+        using var rider = app.Client(app.Rider, "Rider");
+        using var driver = app.Client(app.Driver, "Driver");
+        using var admin = app.Client(Guid.NewGuid(), "Admin");
+        var id = await AdvanceToPickedUp(app, rider, driver);
+        await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "PaymentPending");
+        Assert.Equal(HttpStatusCode.Forbidden, (await rider.PostAsJsonAsync(
+            $"/trips/{id}/refund-approval", new { reasonCode = SagaRefundReasonCodes.ApprovedCustomerRefund,
+                evidenceReference = "case-1" })).StatusCode);
+
+        var command = Assert.Single(app.Store.Events.OfType<ProcessPayment>());
+        var paymentId = Guid.NewGuid();
+        using (var scope = app.Services.CreateScope())
+            await scope.ServiceProvider.GetRequiredService<TripPaymentResultHandler>()
+                .HandleAsync(new PaymentSettled(Guid.NewGuid(), id, command.EventId,
+                    DateTime.UtcNow, id, paymentId, command.Amount), CancellationToken.None);
+        app.PaymentClient.Setup(p => p.GetByTripAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PaymentDetailResponse(paymentId, id, command.Amount,
+                ContractPaymentMethod.WALLET, PaymentState.SUCCEEDED, 1, null, 40000m, 10000m));
+
+        await AssertState(await admin.PostAsJsonAsync($"/trips/{id}/refund-approval",
+            new { reasonCode = SagaRefundReasonCodes.ApprovedCustomerRefund,
+                evidenceReference = "case-1" }), "RefundPending");
+        await AssertState(await admin.PostAsJsonAsync($"/trips/{id}/refund-approval",
+            new { reasonCode = SagaRefundReasonCodes.ApprovedCustomerRefund,
+                evidenceReference = "case-1" }), "RefundPending");
+        await Error(await admin.PostAsJsonAsync($"/trips/{id}/refund-approval",
+            new { reasonCode = SagaRefundReasonCodes.ApprovedCustomerRefund,
+                evidenceReference = "another-case" }), HttpStatusCode.Conflict, "REFUND_NOT_READY");
+        var refund = Assert.Single(app.Store.Events.OfType<RefundPayment>());
+        Assert.Equal(id, refund.TripId);
+        Assert.Equal(paymentId, refund.PaymentId);
+        Assert.Equal(PaymentProtocol.TripRefundKey(id), refund.IdempotencyKey);
     }
 }
