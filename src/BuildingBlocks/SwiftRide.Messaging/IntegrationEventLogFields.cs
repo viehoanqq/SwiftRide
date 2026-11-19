@@ -13,6 +13,11 @@ internal static class IntegrationEventLogFields
         PaymentSettled e => (e.TripId, null, QueueNames.TripPaymentSettled),
         PaymentFailed e => (e.TripId, null, QueueNames.TripPaymentFailed),
         TripClosed e => (e.TripId, null, QueueNames.MatchingTripClosed),
+        ProcessPayment e => (e.TripId, null, QueueNames.PaymentProcessPayment),
+        ProcessPaymentTimedOut e => (e.TripId, null, QueueNames.TripProcessPaymentTimedOut),
+        RefundPayment e => (e.TripId, null, QueueNames.PaymentRefundPayment),
+        PaymentRefunded e => (e.TripId, null, QueueNames.TripPaymentRefunded),
+        PaymentRefundFailed e => (e.TripId, null, QueueNames.TripPaymentRefundFailed),
         _ => (null, null, "unknown")
     };
 

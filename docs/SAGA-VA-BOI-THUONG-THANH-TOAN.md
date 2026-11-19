@@ -1,29 +1,29 @@
 # Contract Saga và bồi thường sau thanh toán
 
-**Phạm vi:** chuyến đã `DroppedOff`, Payment thu tiền bất đồng bộ qua `RideCompleted`. Tài liệu này chốt hành vi cần triển khai ở bước Saga tiếp theo; các mục ghi **Cần triển khai** chưa có trong code hiện tại.
+**Phạm vi hiện tại:** sau dropoff, Trip tạo Payment Saga và phát `ProcessPayment` qua outbox. Payment xử lý, Trip nhận kết quả. Consumer `RideCompleted` vẫn tồn tại để nhận tin của những chuyến cũ.
 
 ## Trước khi có tài xế: giữ tiền khác với thu tiền
 
 Ở nhiều ứng dụng, khoản tiền hiển thị “đang xử lý” trước chuyến là **authorization hold** (giữ hạn mức), chưa phải charge cuối. Khi chuyến bị hủy, hệ thống hủy/release hold; sau khi hoàn tất mới capture khoản thực thu. Đây là một mô hình khác với việc charge trước rồi refund.
 
-SwiftRide hiện **chưa có authorization hold/reservation**. Rider chọn phương thức ở bước confirm, nhưng Payment chỉ thu tiền khi Trip phát `RideCompleted` sau dropoff. Vì vậy tài xế hủy **trước dropoff** thì không có khoản charge của chuyến để refund. Cần cập nhật trạng thái Trip và giải phóng tài xế đúng chuyến, nhưng không gọi `RefundAppService`. Nếu dự án sau này chọn mô hình giữ tiền trước khi tìm tài xế, phải bổ sung contract `Authorize/Release/Capture` riêng; hủy chuyến sẽ `Release`, còn `Refund` chỉ dùng khi đã `Capture`/charge thành công. Không mô phỏng việc giữ tiền bằng `PaymentStatus.SUCCEEDED`.
+SwiftRide hiện **chưa có authorization hold/reservation**. Rider chọn phương thức ở bước confirm, nhưng Payment chỉ thu tiền khi Trip phát `ProcessPayment` sau dropoff. Vì vậy tài xế hủy **trước dropoff** thì không có khoản charge của chuyến để refund. Nếu sau này chọn mô hình giữ tiền trước khi tìm tài xế, cần contract `Authorize/Release/Capture` riêng; hủy chuyến sẽ `Release`, còn `Refund` chỉ dùng khi đã charge thành công.
 
 ## 1. Luồng đang có và điểm có thể thất bại
 
 ```mermaid
 flowchart LR
-    A[Trip: DroppedOff] --> B[Trip: PaymentPending + RideCompleted trong outbox]
+    A[Trip: DroppedOff] --> B[Trip: PaymentPending + Saga + ProcessPayment trong outbox]
     B --> C[Payment: checkout + ledger + result trong outbox]
     C --> D[Trip nhận PaymentSettled hoặc PaymentFailed]
     D --> E[Trip: Paid hoặc PaymentFailed + TripClosed trong outbox]
     E --> F[Matching giải phóng driver]
 ```
 
-**Ranh giới Payment Saga:** Trip theo dõi yêu cầu thu tiền từ `RideCompleted` đến khi nhận `PaymentSettled` hoặc `PaymentFailed`. Nếu quá hạn, Saga tra Payment theo `TripId` rồi retry/đối soát; timeout không tự biến thành lỗi thanh toán. Nếu có quyết định hoàn hợp lệ sau khi đã thu tiền, Saga theo dõi `RefundPayment` đến `PaymentRefunded` hoặc `PaymentRefundFailed`. Việc Trip phát `TripClosed` và Matching giải phóng tài xế vẫn chạy theo event hiện có, ngoài phạm vi Saga này.
+**Ranh giới Payment Saga:** Trip theo dõi `ProcessPayment` đến khi nhận `PaymentSettled` hoặc `PaymentFailed`. Nếu quá hạn, Saga tra Payment theo `TripId`; timeout không tự biến thành lỗi thanh toán. Chỉ khi đã xác minh Payment `SUCCEEDED` và có quyết định của Admin, Saga phát `RefundPayment` và chờ `PaymentRefunded` hoặc `PaymentRefundFailed`. `TripClosed` và Matching giải phóng tài xế nằm ngoài Saga.
 
 | Điểm lỗi | Trạng thái tiền | Quyết định |
 | --- | --- | --- |
-| Trip outbox chưa phát `RideCompleted`, RabbitMQ/Payment tạm ngừng | Chưa biết đã thu hay chưa; kiểm tra Payment theo `TripId` | Retry phát/nhận, giữ Trip `PaymentPending`; không tự refund. |
+| Trip outbox chưa phát `ProcessPayment`, RabbitMQ/Payment tạm ngừng | Chưa biết đã thu hay chưa; kiểm tra Payment theo `TripId` | Retry phát/nhận, giữ Trip `PaymentPending`; không tự refund. |
 | Gateway trả `Unknown` | Payment `PENDING`, chưa ghi charge trong ledger nội bộ | Giữ Trip `PaymentPending`, đối soát authorization; không coi là thất bại và không refund khi chưa biết kết quả. |
 | Wallet thiếu tiền hoặc Card `Declined` | Payment `FAILED`, không có charge | Trip `PaymentFailed`; không refund vì chưa thu tiền. |
 | Payment `SUCCEEDED` nhưng `PaymentSettled` chưa đến Trip | Đã thu tiền, Trip vẫn `PaymentPending` | Retry outbox/consumer và đối soát theo `TripId`; không tự refund vì chuyến đã hoàn tất. |
@@ -55,9 +55,9 @@ Không thêm mã “lỗi Matching”, “RabbitMQ timeout” hay “consumer v�
 
 Refund hiện có ở `RefundAppService` + `PaymentSettlement.Refund`: khóa payment/refund key và các tài khoản, đảo **đúng ledger CHARGE gốc**, lưu `RefundReceipt`; Card ghi thêm refund ở gateway giả lập. Không dùng `DriverRate` hiện tại để tính lại phần chia. Nếu Driver/Platform không đủ số dư để đảo ledger, refund hiện trả `REFUND_INSUFFICIENT_FUNDS`; Saga giữ yêu cầu ở trạng thái chờ xử lý, không báo đã hoàn.
 
-## 3. Trạng thái Trip sau bồi thường — Cần triển khai
+## 3. Trạng thái Trip sau bồi thường
 
-Hiện `TripStatus` mới có `PaymentPending`, `Paid`, `PaymentFailed`; **chưa có trạng thái bồi thường**. Chốt bổ sung:
+`TripStatus` hiện có các trạng thái bồi thường:
 
 | Trip status | Ý nghĩa | Trạng thái Payment tương ứng | Người dùng thấy |
 | --- | --- | --- | --- |
@@ -66,14 +66,15 @@ Hiện `TripStatus` mới có `PaymentPending`, `Paid`, `PaymentFailed`; **chưa
 | `PaymentFailed` | Thu tiền thất bại, không có charge | `FAILED` | “Thanh toán thất bại; chưa bị trừ tiền.” |
 | `RefundPending` | Đã chấp thuận bồi thường, đang hoàn/đối soát | Thường vẫn `SUCCEEDED`; chưa khẳng định đã hoàn | “Đang xử lý hoàn tiền.” |
 | `Refunded` | Payment đã `REFUNDED` và Trip đã nhận kết quả | `REFUNDED` | “Đã hoàn tiền.” Hiển thị số tiền và mã tham chiếu. |
+| `RefundNeedsAttention` | Payment từ chối refund một cách xác định | Vẫn đã thu tiền | “Hoàn tiền cần hỗ trợ xử lý.” |
 
-Các chuyển trạng thái hợp lệ: `Paid → RefundPending → Refunded`; trường hợp Payment đã `SUCCEEDED` nhưng Trip chưa nhận được kết quả và khoản thu được xác minh sai: `PaymentPending → RefundPending → Refunded`. Refund lỗi tạm thời giữ `RefundPending` để retry/đối soát. Không chuyển sang `PaymentFailed` sau một khoản thu thành công vì trạng thái đó nói rằng chưa thu được tiền.
+Các chuyển trạng thái runtime: `Paid → RefundPending → Refunded` hoặc `Paid → RefundPending → RefundNeedsAttention`. Sau khi hỗ trợ xử lý nguyên nhân từ chối, Admin có thể duyệt lại cùng reason/evidence; Trip phát command mới với **cùng refund key** để thử lại. Nếu Payment còn `PaymentUncertain`, Trip đối soát và đưa về `Paid` trước khi cho phép duyệt refund. Lỗi tạm thời giữ `RefundPending`; không đổi sang `PaymentFailed` sau khi đã thu tiền.
 
 Khi Trip ở `RefundPending`, API đọc chuyến cần trả trạng thái đó cùng thông tin thanh toán đủ để UI hiển thị “đang hoàn”, **không trả `CardToken`**. Chỉ hiển thị “đã hoàn” sau khi Payment commit refund và Trip nhận xác nhận. Các trường hợp chờ lâu cần hiển thị mã tham chiếu `TripId`/`PaymentId` để hỗ trợ tra cứu; không hứa thời gian hoàn tiền khi chưa có SLA được cấu hình.
 
 ### Bảng chuyển trạng thái Payment Saga
 
-Quy tắc thuần đã được định nghĩa trong `TripService.Application/Sagas/PaymentSagaTransitions.cs`. Saga persistence và consumer timeout đã gọi quy tắc này; dropoff chưa khởi tạo Saga trong runtime. `Completed` nghĩa là Trip đã ghi `Paid` cùng history/outbox, không đợi Matching giải phóng tài xế. `Failed` chỉ dùng khi Payment xác nhận chưa thu được tiền. `NeedsAttention` giữ nguyên trạng thái Trip đã biết và thêm cờ cần đối soát; nó không tự biến khoản thu thành thất bại.
+Quy tắc thuần ở `TripService.Application/Sagas/PaymentSagaTransitions.cs`. Dropoff đã khởi tạo Saga trong runtime. `Completed` nghĩa là Trip đã ghi `Paid` cùng history/outbox, không đợi Matching giải phóng tài xế. `Failed` chỉ dùng khi Payment xác nhận chưa thu được tiền. `NeedsAttention` giữ thông tin khoản thu để hỗ trợ xử lý tiếp; nó không tự biến khoản thu thành thất bại.
 
 | Saga hiện tại | Tín hiệu | Saga tiếp theo | Điều kiện và thao tác cần lưu cùng transaction |
 | --- | --- | --- | --- |
@@ -85,7 +86,7 @@ Quy tắc thuần đã được định nghĩa trong `TripService.Application/Sa
 | `PaymentUncertain` | `PaymentDeclined`/`VerifiedPaymentDeclined` | `Failed` | Chỉ khi xác nhận không có charge; ghi Trip `PaymentFailed`. |
 | `AwaitingPayment`/`PaymentUncertain` | `ManualReviewRequired` | `NeedsAttention` | Sai TripId, PaymentId, amount hoặc không thể đối soát; không refund tự động. |
 | `Completed` | `ApprovedRefundForVerifiedCharge` | `Compensating` | Quyết định refund được duyệt, Payment còn `SUCCEEDED`; ghi Trip `RefundPending` và `RefundPayment` outbox. |
-| `PaymentUncertain`/`NeedsAttention` | `ApprovedRefundForVerifiedCharge` | `Compensating` | Đã xác minh charge thật và quyết định refund; ghi Trip `RefundPending` và command cùng key cố định. |
+| `PaymentUncertain`/`NeedsAttention` | `ApprovedRefundForVerifiedCharge` | `Compensating` | Quy tắc dự phòng của state machine; API hiện yêu cầu đối soát về `Completed`/`Paid` trước khi duyệt refund. |
 | `Compensating` | `PaymentRefunded` | `Compensated` | Đối chiếu refund; ghi Trip `Refunded`, history và checkpoint. |
 | `Compensating` | `RefundOutcomeUnknown` | `Compensating` | Timeout/lỗi kết nối: tra Payment/refund receipt trước khi retry. |
 | `Compensating` | `RefundRejected` hoặc `ManualReviewRequired` | `NeedsAttention` | Kết quả từ chối xác định; giữ thông tin đã thu, không báo khách đã hoàn. |
@@ -100,11 +101,11 @@ Các cặp trạng thái/tín hiệu không có trong bảng bị từ chối. C
 
 `PaymentSagaRepository` dùng chung `TripDbContext` với `TripRepository`. Khi bắt đầu Saga ở dropoff, thêm Saga và `ProcessPayment` vào context rồi gọi **một lần** `TripRepository.SaveChangesAsync`; nhánh `PaymentPending` hiện có transaction/khóa gán tài xế. Khi xử lý kết quả hay refund, thay đổi Saga, Trip, history, checkpoint và outbox trên cùng context rồi gọi **một lần** `PaymentSagaRepository.SaveChangesAsync` để commit/rollback toàn bộ. Không gọi hai `SaveChangesAsync` riêng cho hai repository.
 
-Trip outbox đã chấp nhận và publisher đã biết cách phát `ProcessPayment`/`RefundPayment`/`ProcessPaymentTimedOut`. Scheduler và consumer timeout đã có; runtime chưa tạo command `ProcessPayment`, luồng `RideCompleted` hiện tại vẫn chạy. Khi chuyển sang `ProcessPayment`, cần đổi `TripPaymentResultHandler` để đối chiếu `CausationId` với command mới thay vì chỉ tìm `RideCompleted` như hiện nay.
+Trip outbox phát `ProcessPayment`/`RefundPayment`/`ProcessPaymentTimedOut`. `TripPaymentResultHandler` đối chiếu `CausationId` với Saga command; chỉ tìm `RideCompleted` khi xử lý tin của chuyến cũ chưa có Saga.
 
-## 4. Hợp đồng message cần thêm — Cần triển khai
+## 4. Hợp đồng message Saga
 
-Luồng runtime cũ vẫn còn để tránh ngắt thanh toán trước khi Trip chuyển sang Saga. Các record Payment Saga `ProcessPayment`, `ProcessPaymentTimedOut`, `RefundPayment`, `PaymentRefunded`, `PaymentRefundFailed` đã được khai báo ở `SwiftRide.Contracts.Events`. Payment đã nhận `ProcessPayment` và `RefundPayment`, và phát kết quả refund qua outbox; Trip chưa phát command Saga hoặc nhận kết quả refund. `PaymentRefunded` dùng queue dự kiến `trip.payment-refunded`:
+Các record Payment Saga `ProcessPayment`, `ProcessPaymentTimedOut`, `RefundPayment`, `PaymentRefunded`, `PaymentRefundFailed` nằm ở `SwiftRide.Contracts.Events`. Trip phát command, Payment xử lý và Trip nhận kết quả. `PaymentRefunded` đến queue `trip.payment-refunded`:
 
 ```csharp
 public sealed record PaymentRefunded(
@@ -121,10 +122,10 @@ public sealed record PaymentRefunded(
 
 Payment lưu `PaymentRefunded` vào **Payment outbox trong cùng transaction** với Payment `REFUNDED`, số dư, ledger và `RefundReceipt`; publisher phát sau commit. Trip consumer kiểm tra `TripId`, `PaymentId`, `Amount`, trạng thái `RefundPending` và `EventId`, rồi chuyển `Refunded` cùng history/checkpoint trong một lần lưu. Duplicate cùng `EventId` và payload là no-op; `EventId` trùng nhưng payload khác là lỗi. Không đưa token, số thẻ hoặc lý do tự do vào event/log.
 
-`TripClosed` hiện chỉ chấp nhận `Paid`/`PaymentFailed` ở Matching. Chốt quy tắc:
+`TripClosed` chấp nhận `Paid`/`PaymentFailed` ở Matching. Quy tắc runtime:
 
 - Nếu Trip đã phát `TripClosed(Paid)`, refund về sau **không phát lại** `TripClosed`; Matching đã giải phóng driver. `PaymentRefunded` chỉ cập nhật Trip/Payment.
-- Nếu Trip chưa từng phát `TripClosed` vì kết quả Payment chưa áp dụng, sau khi chuyển `Refunded` Trip phát **một** `TripClosed(Refunded)`; Matching phải chấp nhận `Refunded` và vẫn chỉ giải phóng driver của đúng chuyến đó.
+- Trip chỉ cho duyệt refund sau khi đã `Paid`, tức `TripClosed(Paid)` đã được ghi vào outbox. Refund không phát thêm `TripClosed`.
 - Driver release là tác vụ hậu xử lý có retry, không phải điều kiện để công nhận refund.
 
 `CorrelationId = TripId` xuyên suốt. `CausationId` trỏ đến event gây ra bước kế tiếp khi có event nguồn; `RefundReasonCode` là mã nghiệp vụ, không chứa dữ liệu nhạy cảm. Cần bổ sung mapping log trong BuildingBlocks khi nối luồng runtime và version contract nếu thay đổi các event hiện hữu. Các message Saga là contract mới, không đổi payload của bảy event cũ. `PaymentProtocol.TripPaymentKey(TripId)` giữ key checkout hiện có; `PaymentProtocol.TripRefundKey(TripId)` giữ một key refund cố định cho mỗi chuyến.
@@ -143,13 +144,11 @@ sequenceDiagram
     P->>P: Khóa, đảo ledger gốc, lưu receipt + PaymentRefunded outbox
     P-->>S: PaymentRefunded qua RabbitMQ
     S->>S: Kiểm tra kết quả, ghi Refunded + history
-    opt Chưa từng phát TripClosed
-        S-->>M: TripClosed(Refunded)
-    end
+    Note over S,M: TripClosed(Paid) đã được ghi khi thanh toán hoàn tất
     S-->>R: Hiển thị Đã hoàn tiền
 ```
 
-Trip Saga là nơi **quyết định** có bồi thường; Payment là nơi **thực thi** refund và xác nhận kết quả. Không gọi refund trực tiếp chỉ vì một consumer throw exception. Lệnh refund phải có phân quyền phù hợp, được lưu bền trước khi gửi/retry, và dùng key gắn với `TripId` + quyết định bồi thường để không hoàn hai lần. Endpoint `POST /payments/{id}/refund` hiện đã có nhưng **chưa phải một Saga điều phối tự động**; nó chưa phát `PaymentRefunded` và Trip chưa có consumer/status mới.
+Trip Saga là nơi **điều phối** bồi thường; Payment là nơi **thực thi** refund và xác nhận kết quả. `POST /trips/{id}/refund-approval` nhận `{ "reasonCode": "APPROVED_CUSTOMER_REFUND", "evidenceReference": "case-123" }` và chỉ cho JWT role `Admin`. Trip kiểm tra Payment `SUCCEEDED` đúng chuyến/số tiền/phương thức, ghi người duyệt, thời điểm, reason code, mã hồ sơ bằng chứng và command trong một transaction. Identity có role `Admin` nhưng không cho đăng ký công khai; tài khoản hỗ trợ cần được cấp riêng. Endpoint `POST /payments/{id}/refund` là API refund trực tiếp hiện có, độc lập với Saga.
 
 ## 6. Tiêu chí review trước khi triển khai
 
@@ -164,10 +163,10 @@ Trip Saga là nơi **quyết định** có bồi thường; Payment là nơi **t
 
 Consumer `trip.process-payment-timed-out` kiểm tra TripId, correlation, command ID, deadline và timeout event ID. Nếu kết quả thanh toán đã đến hoặc timeout cũ, nó bỏ qua. Nếu còn `AwaitingPayment`, Saga chuyển sang `PaymentUncertain`; Trip không bị đổi thành `PaymentFailed` và không tự refund. Trạng thái này cần bước đối soát Payment trước khi chốt thành công, thất bại hoặc bồi thường. Retry tiêu thụ dùng giới hạn trong `SwiftRide.Messaging`; sau khi hết retry MassTransit chuyển tin sang queue `_error`.
 
-Hiện tại luồng dropoff vẫn phát `RideCompleted` và chưa khởi tạo Saga/`ProcessPayment`, nên scheduler chỉ hoạt động với Saga được tạo trong bước tích hợp tiếp theo. Refund timeout chưa được lập lịch vì Trip chưa phát `RefundPayment` trong runtime.
+Sau timeout, `PaymentSagaReconciler` hỏi `GET /payments/by-trip/{TripId}`. Chỉ `SUCCEEDED`/`FAILED` đã xác minh mới cập nhật Trip và Saga; `PENDING`, chưa thấy Payment hoặc lỗi kết nối giữ `PaymentUncertain`. Refund quá hạn được đánh dấu `RefundTimedOutAt`; worker tra Payment **và** receipt theo key cố định qua `GET /payments/refunds/by-key/{key}` (scope `payments:read`). Chỉ khi status `REFUNDED`, PaymentId và reason code của receipt khớp command đã duyệt thì Trip chốt `Refunded`. Timeout không tự phát `PaymentRefundFailed`.
 
 ## Payment thực thi lệnh hoàn
 
 `RefundPaymentConsumer` nhận queue `payment.refund-payment`, kiểm tra correlation, `PaymentId`, số tiền, reason code và key `trip:{TripId}:refund:v1`. Consumer dùng `RefundAppService.RefundInsideTransactionAsync` để giữ nguyên quy tắc đảo ledger gốc và gateway CARD. Trong cùng transaction, Payment lưu refund, `RefundReceipt`, checkpoint `ProcessedMessage` và `PaymentRefunded` trong outbox. Gửi lại cùng `EventId` chỉ đọc checkpoint, không tạo refund thứ hai. `PaymentOutboxPublisher` phát kết quả sau commit.
 
-Payment không tìm thấy, sai Trip/số tiền, refund không hợp lệ hoặc thiếu số dư người nhận được trả bằng `PaymentRefundFailed` với mã ổn định. Khi nghiệp vụ refund ném lỗi xác định, giao dịch thử hoàn rollback trước; checkpoint và event thất bại được lưu trong giao dịch mới. Lỗi hạ tầng/gateway không bị coi là refund thất bại: MassTransit retry có giới hạn và sau đó chuyển `_error` để điều tra. Trip vẫn cần consumer kết quả refund và bước phát command để hoàn tất Saga.
+Payment không tìm thấy, sai Trip/số tiền, refund không hợp lệ hoặc thiếu số dư người nhận được trả bằng `PaymentRefundFailed` với mã ổn định. Khi nghiệp vụ refund ném lỗi xác định, giao dịch thử hoàn rollback trước; checkpoint và event thất bại được lưu trong giao dịch mới. Lỗi hạ tầng/gateway không bị coi là refund thất bại: MassTransit retry có giới hạn và sau đó chuyển `_error` để điều tra. Trip nhận kết quả ở `trip.payment-refunded` hoặc `trip.payment-refund-failed`, đối chiếu command và cập nhật Saga/Trip/history/checkpoint trong một transaction.

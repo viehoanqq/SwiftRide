@@ -13,6 +13,11 @@ internal static class IntegrationEventDescriptions
         PaymentSettled => "Thanh toán thành công; Trip đánh dấu đã thanh toán",
         PaymentFailed => "Thanh toán thất bại; Trip đánh dấu thanh toán thất bại",
         TripClosed => "Chuyến đã đóng; Matching giải phóng tài xế của chuyến",
+        ProcessPayment => "Trip yêu cầu Payment thu tiền chuyến",
+        ProcessPaymentTimedOut => "Đến hạn chờ thanh toán; Trip đối soát kết quả",
+        RefundPayment => "Trip yêu cầu Payment hoàn khoản thu đã duyệt",
+        PaymentRefunded => "Payment đã hoàn tiền; Trip cập nhật chuyến",
+        PaymentRefundFailed => "Payment từ chối hoàn tiền; Trip cần hỗ trợ xử lý",
         _ => message.GetType().Name
     };
 
