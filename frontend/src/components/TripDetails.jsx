@@ -1,8 +1,26 @@
 import { money } from '../utils/format';
 
 const PAYMENT_METHOD_LABEL = {
-  WALLET: 'Ví',
-  CARD: 'Thẻ',
+  WALLET: 'Ví (WALLET)',
+  CARD: 'Thẻ giả lập (CARD)',
+};
+
+const STATUS_LABELS = {
+  Requested: 'Tạo yêu cầu chuyến',
+  Quoted: 'Đã báo giá (chờ xác nhận)',
+  DriverOffered: 'Đã gửi lời mời tài xế',
+  DriverAccepted: 'Tài xế đã nhận chuyến',
+  EnRoute: 'Tài xế đang đến điểm đón',
+  PickedUp: 'Đã đón khách',
+  DroppedOff: 'Đã trả khách',
+  PaymentPending: 'Đang xử lý thanh toán',
+  Paid: 'Đã thanh toán',
+  PaymentFailed: 'Thanh toán thất bại',
+  Cancelled: 'Đã hủy chuyến',
+  Failed: 'Không tìm được tài xế',
+  RefundPending: 'Đang xử lý hoàn tiền',
+  Refunded: 'Đã hoàn tiền',
+  RefundNeedsAttention: 'Hoàn tiền cần hỗ trợ xử lý',
 };
 
 function buildTimelineSteps(trip) {
@@ -11,25 +29,43 @@ function buildTimelineSteps(trip) {
     historyMap.set(item.to, item.at);
   });
 
-  const isPaymentFailed = trip.status === 'PaymentFailed';
+  const isPaymentFailed = trip.status === 'PaymentFailed' || historyMap.has('PaymentFailed');
   const isCancelled = trip.status === 'Cancelled' || trip.status === 'Failed';
+  const hasRefundFlow = ['RefundPending', 'Refunded', 'RefundNeedsAttention'].some(
+    s => trip.status === s || historyMap.has(s),
+  );
 
   const baseSteps = [
-    { key: 'Requested', label: 'Tạo yêu cầu chuyến' },
-    { key: 'Quoted', label: 'Báo giá chuyến đi' },
-    { key: 'DriverAccepted', label: 'Tài xế nhận chuyến' },
-    { key: 'PickedUp', label: 'Đã đón khách' },
-    { key: 'PaymentPending', label: 'Chờ thanh toán' },
-    isPaymentFailed
-      ? { key: 'PaymentFailed', label: 'Thanh toán thất bại' }
-      : { key: 'Paid', label: 'Đã thanh toán' },
+    { key: 'Requested', label: STATUS_LABELS.Requested },
+    { key: 'Quoted', label: STATUS_LABELS.Quoted },
   ];
 
   if (isCancelled) {
     baseSteps.push({
       key: trip.status,
-      label: trip.status === 'Cancelled' ? 'Đã hủy chuyến' : 'Không tìm được tài xế',
+      label: STATUS_LABELS[trip.status] || trip.status,
     });
+  } else {
+    baseSteps.push(
+      { key: 'DriverOffered', label: STATUS_LABELS.DriverOffered },
+      { key: 'DriverAccepted', label: STATUS_LABELS.DriverAccepted },
+      { key: 'EnRoute', label: STATUS_LABELS.EnRoute },
+      { key: 'PickedUp', label: STATUS_LABELS.PickedUp },
+      { key: 'DroppedOff', label: STATUS_LABELS.DroppedOff },
+      { key: 'PaymentPending', label: STATUS_LABELS.PaymentPending },
+      isPaymentFailed
+        ? { key: 'PaymentFailed', label: STATUS_LABELS.PaymentFailed }
+        : { key: 'Paid', label: STATUS_LABELS.Paid },
+    );
+
+    if (hasRefundFlow) {
+      baseSteps.push({ key: 'RefundPending', label: STATUS_LABELS.RefundPending });
+      if (trip.status === 'RefundNeedsAttention' || historyMap.has('RefundNeedsAttention')) {
+        baseSteps.push({ key: 'RefundNeedsAttention', label: STATUS_LABELS.RefundNeedsAttention });
+      } else {
+        baseSteps.push({ key: 'Refunded', label: STATUS_LABELS.Refunded });
+      }
+    }
   }
 
   return baseSteps.map(step => {
@@ -44,17 +80,20 @@ export default function TripDetails({ trip }) {
   const timelineSteps = buildTimelineSteps(trip);
   const methodCode = trip.fare?.paymentMethod;
   const methodLabel = PAYMENT_METHOD_LABEL[methodCode] || methodCode || 'Chưa chọn';
+  const statusDisplay = STATUS_LABELS[trip.status]
+    ? `${trip.status} — ${STATUS_LABELS[trip.status]}`
+    : trip.status;
 
   return <>
-    <p>Trạng thái: <strong>{trip.status}</strong></p>
+    <p>Trạng thái: <strong>{statusDisplay}</strong></p>
     <p>Điểm đón: {trip.pickup.address} ({trip.pickup.lat}, {trip.pickup.lng})</p>
     <p>Điểm đến: {trip.dropoff.address} ({trip.dropoff.lat}, {trip.dropoff.lng})</p>
 
     {trip.fare && <section>
       <h2>Giá chuyến</h2>
       <p>Giá: {money(trip.fare.price)}</p>
-      <p>Quãng đường: {trip.fare.distanceKm} km</p>
-      <p>Thời gian dự kiến: {trip.fare.durationMin} phút</p>
+      <p>Quãng đường: {Number(trip.fare.distanceKm).toFixed(2)} km</p>
+      <p>Thời gian dự kiến: {Number(trip.fare.durationMin).toFixed(1)} phút</p>
       <p>Thanh toán: {methodLabel}</p>
       <p>Chiến lược: {trip.fare.strategy}</p>
       <p>Trạng thái báo giá: {trip.fare.status}</p>
@@ -62,8 +101,14 @@ export default function TripDetails({ trip }) {
 
     <section>
       <h2>Tài xế</h2>
-      {trip.driver ? <><p>{trip.driver.name}</p><p>Mã tài xế: {trip.driver.id}</p></>
-        : <p>Chưa có tài xế nhận chuyến.</p>}
+      {trip.driver ? (
+        <>
+          <p>Họ tên: {trip.driver.name || '(Chưa cập nhật tên)'}</p>
+          <p>Mã tài xế: <code>{trip.driver.id}</code></p>
+        </>
+      ) : (
+        <p>Chưa có tài xế nhận chuyến.</p>
+      )}
     </section>
 
     <section>
@@ -74,10 +119,9 @@ export default function TripDetails({ trip }) {
             key={step.key}
             style={{
               fontWeight: step.isCurrent ? 'bold' : 'normal',
-              color: step.key === 'PaymentFailed' ? 'red' : step.completed ? 'green' : '#666',
             }}
           >
-            {step.completed ? '✔ ' : '○ '}
+            {step.completed ? '[x] ' : '[ ] '}
             {step.label} ({step.key})
             {step.timestamp && (
               <> <time dateTime={step.timestamp}>— {new Date(step.timestamp).toLocaleString('vi-VN')}</time></>

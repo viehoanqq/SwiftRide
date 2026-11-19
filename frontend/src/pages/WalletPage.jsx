@@ -1,8 +1,11 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { walletApi } from '../api/walletApi';
+import { paymentApi } from '../api/paymentApi';
+import { getErrorMessage } from '../api/client';
 import usePolling from '../hooks/usePolling';
 import { useAuth } from '../auth/AuthContext';
+import { homeOf } from '../auth/ProtectedRoute';
 import { money } from '../utils/format';
 
 const ENTRY_TYPE_LABELS = {
@@ -17,11 +20,37 @@ export default function WalletPage() {
   const load = useCallback(signal => walletApi.getMyWallet(signal), []);
   const { data: wallet, loading, error, refresh: loadWallet } = usePolling(load, false);
 
-  const isDriver = user?.role === 'Driver';
-  const backLink = isDriver ? '/driver' : '/rider';
-  const backState = isDriver ? undefined : { showHome: true };
+  const [lookupPaymentId, setLookupPaymentId] = useState('');
+  const [selectedPayment, setSelectedPayment] = useState(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
+
+  const isRider = user?.role === 'Rider';
+  const backLink = homeOf(user?.role);
+  const backState = isRider ? { showHome: true } : undefined;
 
   const entries = wallet?.entries ?? [];
+
+  const fetchPaymentDetail = async id => {
+    const trimmed = (id || '').trim();
+    if (!trimmed) return;
+    setPaymentLoading(true);
+    setPaymentError('');
+    try {
+      const detail = await paymentApi.getById(trimmed);
+      setSelectedPayment(detail);
+    } catch (err) {
+      setSelectedPayment(null);
+      setPaymentError(getErrorMessage(err));
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
+  const handlePaymentLookupSubmit = e => {
+    e.preventDefault();
+    fetchPaymentDetail(lookupPaymentId);
+  };
 
   return (
     <main>
@@ -35,10 +64,8 @@ export default function WalletPage() {
         <button type="button" onClick={logout}>Đăng xuất</button>
       </p>
 
-      {/* Trạng thái đang tải */}
       {loading && <p>Đang tải thông tin ví...</p>}
 
-      {/* Trạng thái lỗi */}
       {!loading && error && (
         <div role="alert">
           <p>{error}</p>
@@ -46,7 +73,6 @@ export default function WalletPage() {
         </div>
       )}
 
-      {/* Nội dung khi tải thành công */}
       {!loading && !error && wallet && (
         <>
           <section>
@@ -56,10 +82,53 @@ export default function WalletPage() {
             </fieldset>
           </section>
 
-          <section>
-            <h2>Lịch sử bút toán</h2>
+          {isRider && (
+            <section>
+              <h2>Tra cứu giao dịch theo Payment ID (GET /payments/&#123;id&#125;)</h2>
+              <form onSubmit={handlePaymentLookupSubmit}>
+                <label htmlFor="wallet-payment-id">Mã giao dịch (Payment ID) </label>
+                <input
+                  id="wallet-payment-id"
+                  type="text"
+                  size="40"
+                  placeholder="Nhập hoặc chọn từ bảng bút toán bên dưới"
+                  value={lookupPaymentId}
+                  onChange={e => setLookupPaymentId(e.target.value)}
+                  required
+                />{' '}
+                <button type="submit" disabled={paymentLoading}>
+                  {paymentLoading ? 'Đang tải...' : 'Xem giao dịch'}
+                </button>
+              </form>
 
-            {/* Trạng thái rỗng */}
+              {paymentError && <p role="alert">{paymentError}</p>}
+
+              {selectedPayment && (
+                <fieldset>
+                  <legend>Chi tiết giao dịch {selectedPayment.id}</legend>
+                  <p>Mã giao dịch (Payment ID): <code>{selectedPayment.id}</code></p>
+                  <p>
+                    Mã chuyến đi (Trip ID):{' '}
+                    <Link to={`/rider/trips/${selectedPayment.tripId}`}>
+                      <code>{selectedPayment.tripId}</code>
+                    </Link>
+                  </p>
+                  <p>Số tiền: <strong>{money(selectedPayment.amount)}</strong></p>
+                  <p>Phương thức: <code>{selectedPayment.method}</code></p>
+                  <p>Trạng thái: <strong>{selectedPayment.status}</strong></p>
+                  <p>Tài xế nhận: {money(selectedPayment.driverAmount)} | Phí nền tảng: {money(selectedPayment.platformAmount)}</p>
+                  <p>Số lần thử (AttemptCount): {selectedPayment.attemptCount}</p>
+                  {selectedPayment.failureReason && (
+                    <p>Lý do thất bại: <code>{selectedPayment.failureReason}</code></p>
+                  )}
+                </fieldset>
+              )}
+            </section>
+          )}
+
+          <section>
+            <h2>Lịch sử bút toán ({entries.length})</h2>
+
             {entries.length === 0 ? (
               <p>Chưa có bút toán nào trong ví.</p>
             ) : (
@@ -70,6 +139,7 @@ export default function WalletPage() {
                     <th>Loại bút toán</th>
                     <th>Số tiền (+/-)</th>
                     <th>Mã giao dịch (Payment ID)</th>
+                    {isRider && <th>Thao tác</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -82,10 +152,26 @@ export default function WalletPage() {
                       <tr key={`${entry.paymentId}-${entry.entryType}-${index}`}>
                         <td>{new Date(entry.createdAt).toLocaleString('vi-VN')}</td>
                         <td>{typeLabel}</td>
-                        <td style={{ color: isPositive ? 'green' : 'red', fontWeight: 'bold' }}>
-                          {isPositive ? `+${money(amount)}` : `-${money(Math.abs(amount))}`}
+                        <td>
+                          <strong>
+                            {isPositive ? `+${money(amount)}` : `-${money(Math.abs(amount))}`}
+                          </strong>
                         </td>
                         <td><code>{entry.paymentId}</code></td>
+                        {isRider && (
+                          <td>
+                            <button
+                              type="button"
+                              disabled={paymentLoading}
+                              onClick={() => {
+                                setLookupPaymentId(entry.paymentId);
+                                fetchPaymentDetail(entry.paymentId);
+                              }}
+                            >
+                              Chi tiết
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
