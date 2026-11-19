@@ -1,5 +1,7 @@
 # Tài liệu Tổng hợp API, Luồng Nghiệp vụ (Rider & Driver) và Hướng dẫn Postman 1-Click
 
+> **Cập nhật:** Hướng dẫn kiểm thử Postman theo Payment Saga hiện tại nằm ở [POSTMAN-TEST-CHI-TIET.md](POSTMAN-TEST-CHI-TIET.md). Phần mô tả worker HTTP, `RideCompleted` và chạy Runner 1-click bên dưới là luồng cũ, chỉ dùng để tham khảo lịch sử API.
+
 Tài liệu này tổng hợp toàn bộ danh sách API của dự án **SwiftRide**, luồng hoạt động End-to-End của **Rider** và **Driver**, cùng hướng dẫn thiết lập và chạy kiểm thử tự động 1-Click trên **Postman** cho cả nhóm.
 
 ---

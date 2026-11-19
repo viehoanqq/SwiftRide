@@ -1,0 +1,284 @@
+{
+  "info": {
+    "name": "SwiftRide - Refund Saga (Admin, run separately)",
+    "_postman_id": "2b6ed2a4-3846-4ba5-bc3e-a6915a0126d3",
+    "description": "Chỉ chạy sau khi Trip Paid và Payment SUCCEEDED; cần adminToken hợp lệ.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "06. Admin Refund Saga (run separately after Paid)",
+      "description": "Chỉ chạy sau chuyến Paid/Payment SUCCEEDED với adminToken được cấp riêng.",
+      "item": [
+        {
+          "name": "6.0 Login demo Admin (Development only)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{adminPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{gatewayUrl}}/auth/login",
+              "host": ["{{gatewayUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Identity Development tạo Admin mẫu khi khởi động: 0990000000 / 123456. Lưu accessToken vào adminToken."
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('Admin đăng nhập thành công (200)', () => pm.response.to.have.status(200));",
+                "if (pm.response.code === 200) {",
+                "  const result = pm.response.json();",
+                "  pm.test('Đúng vai trò Admin', () => pm.expect(result.user.role).to.eql('Admin'));",
+                "  if (result.user.role === 'Admin') pm.environment.set('adminToken', result.accessToken);",
+                "}"
+              ]
+            }
+          }],
+          "response": []
+        },
+        {
+          "name": "6.1 Rider cannot approve refund (403)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/trips/{{tripId}}/refund-approval",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "refund-approval"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reasonCode\": \"APPROVED_CUSTOMER_REFUND\",\n  \"evidenceReference\": \"case-postman-001\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Rider bị từ chối (403)', () => pm.response.to.have.status(403));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.2 Admin approve refund (RefundPending)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/trips/{{tripId}}/refund-approval",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "refund-approval"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reasonCode\": \"APPROVED_CUSTOMER_REFUND\",\n  \"evidenceReference\": \"case-postman-001\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Admin đã duyệt (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.test('Đang hoàn tiền', () => pm.expect(pm.response.json().status).to.eql('RefundPending'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.3 Admin repeat same approval while pending",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/trips/{{tripId}}/refund-approval",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "refund-approval"
+              ]
+            },
+            "description": "Gọi ngay sau 6.2. Nếu đã Refunded, API có thể từ chối thao tác lặp; xem 6.4 để xác nhận kết quả.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reasonCode\": \"APPROVED_CUSTOMER_REFUND\",\n  \"evidenceReference\": \"case-postman-001\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Gọi lặp: còn chờ trả 200, đã hoàn trả 409', () => pm.expect([200,409]).to.include(pm.response.code));",
+                  "if (pm.response.code === 200) pm.test('Vẫn đang chờ', () => pm.expect(pm.response.json().status).to.eql('RefundPending'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.4 Poll trip until Refunded",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/trips/{{tripId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Xem chuyến (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) console.log('Refund trip status:', pm.response.json().status, '— poll đến Refunded hoặc RefundNeedsAttention');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.5 Poll payment until REFUNDED",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{gatewayUrl}}/payments/by-trip/{{tripId}}",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "payments",
+                "by-trip",
+                "{{tripId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Xem payment (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) console.log('Refund payment status:', pm.response.json().status, '— poll đến REFUNDED');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

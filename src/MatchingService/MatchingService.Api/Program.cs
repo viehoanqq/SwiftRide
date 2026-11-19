@@ -56,9 +56,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
                 var (code, message) = context.AuthenticateFailure switch
                 {
-                    SecurityTokenExpiredException => ("TOKEN_EXPIRED", "PhiÃªn Ä‘Äƒng nháº­p Ä‘Ã£ háº¿t háº¡n, vui lÃ²ng Ä‘Äƒng nháº­p láº¡i"),
-                    not null => ("TOKEN_INVALID", "Token khÃ´ng há»£p lá»‡"),
-                    null => ("UNAUTHORIZED", "Báº¡n cáº§n Ä‘Äƒng nháº­p Ä‘á»ƒ thá»±c hiá»‡n thao tÃ¡c nÃ y")
+                    SecurityTokenExpiredException => ("TOKEN_EXPIRED", "Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại"),
+                    not null => ("TOKEN_INVALID", "Token không hợp lệ"),
+                    null => ("UNAUTHORIZED", "Bạn cần đăng nhập để thực hiện thao tác này")
                 };
 
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -69,7 +69,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             OnForbidden = async context =>
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await context.Response.WriteAsJsonAsync(new { code = "FORBIDDEN", message = "Báº¡n khÃ´ng cÃ³ quyá»n thá»±c hiá»‡n thao tÃ¡c nÃ y" });
+                await context.Response.WriteAsJsonAsync(new { code = "FORBIDDEN", message = "Bạn không có quyền thực hiện thao tác này" });
             }
     };
     });

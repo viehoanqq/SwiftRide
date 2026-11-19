@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "3c9e7f12-8a4b-4d6e-b123-9876543210ab",
     "name": "SwiftRide - End-to-End Business Flow (1-Click Runner)",
-    "description": "Bộ Collection kiểm thử tự động End-to-End qua API Gateway (:5000) cho dự án SwiftRide.\n\nHướng dẫn chạy 1-Click (Collection Runner):\n1. Import cả 2 file `SwiftRide-EndToEnd.postman_collection.json` và `SwiftRide-Gateway.postman_environment.json` vào Postman.\n2. Chọn Environment `SwiftRide - API Gateway (Local)` ở góc trên bên phải.\n3. Bấm chuột phải vào Collection -> Run collection -> Run SwiftRide.\n4. Toàn bộ các bước từ Kiểm tra Health -> Đăng nhập Rider & Driver -> Bật Online -> Đặt xe & Báo giá -> Xác nhận giá & Ghép tài xế -> Tài xế nhận chuyến -> Đón/Trả khách -> Kiểm tra Thanh toán & Ví sẽ tự động truyền biến (`riderToken`, `driverToken`, `tripId`, `offerId`, `paymentId`) qua từng bước.",
+    "description": "Chạy luồng WALLET qua Gateway. Request 5.1/5.2 tự poll tối đa 30 lần; đặt Runner delay 2000 ms. Refund Saga ở collection riêng.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -396,6 +396,7 @@
               "listen": "test",
               "script": {
                 "exec": [
+                  "pm.environment.unset('paymentId'); pm.environment.unset('tripPollAttempts'); pm.environment.unset('paymentPollAttempts');",
                   "pm.test('Tạo chuyến đi và nhận báo giá thành công (201 Created)', function () {",
                   "    pm.response.to.have.status(201);",
                   "});",
@@ -544,7 +545,7 @@
                 "confirm"
               ]
             },
-            "description": "Rider đồng ý báo giá với phương thức `WALLET`. Trip Service gọi nội bộ sang Matching Service (`POST /match`) tìm tài xế gần nhất đang `Available` và tạo lời mời (`DriverOffered`)."
+            "description": "WALLET: {accept:true,paymentMethod:'WALLET'} (không cardToken). CARD chỉ Development/Testing: thêm cardToken = test-card-approved, test-card-declined hoặc test-card-unknown; tạo chuyến mới cho mỗi ca."
           },
           "response": []
         }
@@ -560,18 +561,11 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Lấy danh sách lời mời của tài xế thành công (200 OK)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
+                  "pm.test('Lấy danh sách offer (200)', () => pm.response.to.have.status(200));",
                   "const offers = pm.response.json();",
-                  "if (Array.isArray(offers) && offers.length > 0) {",
-                  "    const targetTripId = pm.environment.get('tripId');",
-                  "    const matchedOffer = offers.find(o => o.tripId === targetTripId) || offers[0];",
-                  "    pm.environment.set('offerId', matchedOffer.offerId);",
-                  "    pm.environment.set('tripId', matchedOffer.tripId);",
-                  "    console.log('Đã nhận lời mời offerId:', matchedOffer.offerId, 'cho tripId:', matchedOffer.tripId);",
-                  "}"
+                  "const target = offers.find(o => o.tripId === pm.environment.get('tripId'));",
+                  "pm.test('Driver hiện tại được mời đúng chuyến', () => pm.expect(target, 'Đăng nhập Driver được mời và gọi lại').to.exist);",
+                  "if (target) pm.environment.set('offerId', target.offerId);"
                 ],
                 "type": "text/javascript"
               }
@@ -789,12 +783,8 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Trả khách thành công (200 OK)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(['Paid', 'PaymentPending', 'PaymentFailed']).to.include(res.status);",
-                  "    console.log('Trạng thái chuyến sau khi Dropoff:', res.status);",
-                  "});"
+                  "pm.test('Dropoff lưu Payment Saga và lệnh thanh toán (200)', () => pm.response.to.have.status(200));",
+                  "pm.test('Chuyến đang chờ hoặc đã có kết quả', () => pm.expect(['PaymentPending','Paid','PaymentFailed']).to.include(pm.response.json().status));"
                 ],
                 "type": "text/javascript"
               }
@@ -824,7 +814,7 @@
                 "dropoff"
               ]
             },
-            "description": "Tài xế hoàn tất trả khách (`DroppedOff` -> `PaymentPending` -> gọi nội bộ `POST /payments` sang Payment Service -> `Paid` và giải phóng tài xế về `Available`)."
+            "description": "Kết quả Payment chạy bất đồng bộ qua Trip outbox → payment.process-payment → Payment outbox → Trip consumer. Poll 5.1 và 5.2."
           },
           "response": []
         }
@@ -837,15 +827,35 @@
           "name": "5.1 Rider View Completed Trip & Full History (/trips/{id})",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const url = pm.variables.replaceIn('{{gatewayUrl}}/trips/{{tripId}}');",
+                  "const token = pm.environment.get('riderToken');",
+                  "function waitForTrip(attempt) {",
+                  "  pm.sendRequest({ url, method: 'GET', header: { Authorization: 'Bearer ' + token } }, (error, response) => {",
+                  "    if (error || !response || response.code !== 200) { console.warn('Không đọc được Trip:', error || (response && response.code)); return; }",
+                  "    const status = response.json().status;",
+                  "    if (['Paid', 'PaymentFailed'].includes(status)) { console.log('Trip đã hoàn tất sau', attempt, 'lần kiểm tra:', status); return; }",
+                  "    if (attempt < 30) { setTimeout(() => waitForTrip(attempt + 1), 2000); return; }",
+                  "    console.warn('Trip vẫn', status, 'sau khoảng 60 giây; kiểm tra Saga, trip.payment-settled và _error');",
+                  "  });",
+                  "}",
+                  "waitForTrip(1);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Xem chi tiết chuyến đi và lịch sử trạng thái thành công (200 OK)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.id).to.eql(pm.environment.get('tripId'));",
-                  "    pm.expect(res.history.length).to.be.above(0);",
-                  "});"
+                  "pm.test('Xem chuyến (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const trip = pm.response.json();",
+                  "  pm.test('Đúng tripId', () => pm.expect(trip.id).to.eql(pm.environment.get('tripId')));",
+                  "  pm.test('WALLET chuẩn phải kết thúc Paid', () => pm.expect(trip.status).to.eql('Paid'));",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -881,17 +891,38 @@
           "name": "5.2 Rider Get Payment Details By Trip (/payments/by-trip/{tripId})",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const url = pm.variables.replaceIn('{{gatewayUrl}}/payments/by-trip/{{tripId}}');",
+                  "const token = pm.environment.get('riderToken');",
+                  "function waitForPayment(attempt) {",
+                  "  pm.sendRequest({ url, method: 'GET', header: { Authorization: 'Bearer ' + token } }, (error, response) => {",
+                  "    if (!error && response && response.code === 200) { console.log('Payment đã sẵn sàng sau', attempt, 'lần kiểm tra'); return; }",
+                  "    if (!error && response && response.code === 404 && attempt < 30) {",
+                  "      setTimeout(() => waitForPayment(attempt + 1), 2000);",
+                  "      return;",
+                  "    }",
+                  "    console.warn('Không thể chờ Payment:', error || (response && response.code), 'lần', attempt);",
+                  "  });",
+                  "}",
+                  "waitForPayment(1);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Tra cứu giao dịch thanh toán theo TripId (200 OK hoặc 404 nếu chưa tạo payment)', function () {",
-                  "    pm.expect([200, 404]).to.include(pm.response.code);",
-                  "    if (pm.response.code === 200) {",
-                  "        const res = pm.response.json();",
-                  "        pm.environment.set('paymentId', res.id);",
-                  "        console.log('Đã lưu paymentId:', res.id, 'Status:', res.status, 'Driver nhận:', res.driverAmount);",
-                  "    }",
-                  "});"
+                  "pm.test('Payment đã xuất hiện (200, không chấp nhận 404)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const payment = pm.response.json();",
+                  "  pm.environment.set('paymentId', payment.id);",
+                  "  pm.test('Đúng tripId', () => pm.expect(payment.tripId).to.eql(pm.environment.get('tripId')));",
+                  "  console.log('Payment final:', payment.status, 'failureReason:', payment.failureReason, 'paymentId:', payment.id);",
+                  "  pm.test('WALLET chuẩn phải thanh toán thành công', () => pm.expect(payment.status, payment.failureReason || 'Không có failureReason').to.eql('SUCCEEDED'));",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -920,7 +951,8 @@
                 "by-trip",
                 "{{tripId}}"
               ]
-            }
+            },
+            "description": "404 chỉ là trạng thái tạm thời trước khi Payment consumer tạo bản ghi. Poll đến 200; với CARD unknown, bản ghi PENDING."
           },
           "response": []
         },
@@ -928,23 +960,12 @@
           "name": "5.3 Rider Get Payment Details By PaymentId (/payments/{id})",
           "event": [
             {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "if (!pm.environment.get('paymentId')) {",
-                  "    pm.environment.set('paymentId', '00000000-0000-0000-0000-000000000000');",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            },
-            {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Kiểm tra chi tiết Payment theo ID', function () {",
-                  "    pm.expect([200, 404]).to.include(pm.response.code);",
-                  "});"
+                  "pm.test('Đã có paymentId từ bước 5.2', () => pm.expect(pm.environment.get('paymentId')).to.be.ok);",
+                  "pm.test('Xem payment theo ID (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.test('Đúng paymentId', () => pm.expect(pm.response.json().id).to.eql(pm.environment.get('paymentId')));"
                 ],
                 "type": "text/javascript"
               }

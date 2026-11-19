@@ -34,7 +34,7 @@ builder.Services.AddSwaggerGen(options =>
         Type = SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT",
-        Description = "DÃ¡n accessToken láº¥y tá»« POST /auth/login"
+        Description = "POST /auth/login"
     });
     options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
     {
@@ -66,7 +66,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         await context.Response.WriteAsJsonAsync(new
         {
             code = "FORBIDDEN",
-            message = "Báº¡n khÃ´ng cÃ³ quyá»n thá»±c hiá»‡n thao tÃ¡c nÃ y."
+            message = "Bạn không có quyền thực hiện thao tác này."
         });
     },
     OnChallenge = async context =>
@@ -76,9 +76,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         context.Response.Headers.WWWAuthenticate = "Bearer";
         var (code, message) = context.AuthenticateFailure switch
         {
-            SecurityTokenExpiredException => ("TOKEN_EXPIRED", "PhiÃªn Ä‘Äƒng nháº­p Ä‘Ã£ háº¿t háº¡n."),
-            not null => ("TOKEN_INVALID", "Token khÃ´ng há»£p lá»‡."),
-            _ => ("UNAUTHORIZED", "Báº¡n cáº§n Ä‘Äƒng nháº­p Ä‘á»ƒ thá»±c hiá»‡n thao tÃ¡c nÃ y.")
+            SecurityTokenExpiredException => ("TOKEN_EXPIRED", "Phiên đăng nhập đã hết hạn."),
+            not null => ("TOKEN_INVALID", "Token không hợp lệ."),
+            _ => ("UNAUTHORIZED", "Bạn cần đăng nhập để thực hiện thao tác này.")
         };
         await context.Response.WriteAsJsonAsync(new { code, message });
     }
