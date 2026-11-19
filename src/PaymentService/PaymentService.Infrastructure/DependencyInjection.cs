@@ -37,6 +37,7 @@ public static class DependencyInjection
         }
         services.AddScoped<IPaymentMethodProcessorFactory, PaymentMethodProcessorFactory>();
         services.AddScoped<PaymentCheckoutService>();
+        services.AddScoped<RefundAppService>();
         services.AddScoped<IPaymentCheckoutService>(sp => sp.GetRequiredService<PaymentCheckoutService>());
         services.AddSwiftRideMessaging(configuration, environment,
             configureConsumers: bus =>
@@ -48,6 +49,8 @@ public static class DependencyInjection
                     .Endpoint(endpoint => endpoint.Name = QueueNames.PaymentRideCompleted);
                 bus.AddConsumer<ProcessPaymentConsumer>()
                     .Endpoint(endpoint => endpoint.Name = QueueNames.PaymentProcessPayment);
+                bus.AddConsumer<RefundPaymentConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.PaymentRefundPayment);
             });
         if (environment?.IsEnvironment("Testing") != true)
             services.AddHostedService<PaymentOutboxPublisher>();

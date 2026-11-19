@@ -104,7 +104,7 @@ Trip outbox đã chấp nhận và publisher đã biết cách phát `ProcessPay
 
 ## 4. Hợp đồng message cần thêm — Cần triển khai
 
-Luồng runtime hiện tại có bảy integration event. Các record Payment Saga `ProcessPayment`, `ProcessPaymentTimedOut`, `RefundPayment`, `PaymentRefunded`, `PaymentRefundFailed` đã được khai báo ở `SwiftRide.Contracts.Events`. Timeout đã có publisher/consumer; các command và kết quả Saga còn lại chưa nối vào runtime. `PaymentRefunded` dùng queue dự kiến `trip.payment-refunded`:
+Luồng runtime cũ vẫn còn để tránh ngắt thanh toán trước khi Trip chuyển sang Saga. Các record Payment Saga `ProcessPayment`, `ProcessPaymentTimedOut`, `RefundPayment`, `PaymentRefunded`, `PaymentRefundFailed` đã được khai báo ở `SwiftRide.Contracts.Events`. Payment đã nhận `ProcessPayment` và `RefundPayment`, và phát kết quả refund qua outbox; Trip chưa phát command Saga hoặc nhận kết quả refund. `PaymentRefunded` dùng queue dự kiến `trip.payment-refunded`:
 
 ```csharp
 public sealed record PaymentRefunded(
@@ -164,4 +164,10 @@ Trip Saga là nơi **quyết định** có bồi thường; Payment là nơi **t
 
 Consumer `trip.process-payment-timed-out` kiểm tra TripId, correlation, command ID, deadline và timeout event ID. Nếu kết quả thanh toán đã đến hoặc timeout cũ, nó bỏ qua. Nếu còn `AwaitingPayment`, Saga chuyển sang `PaymentUncertain`; Trip không bị đổi thành `PaymentFailed` và không tự refund. Trạng thái này cần bước đối soát Payment trước khi chốt thành công, thất bại hoặc bồi thường. Retry tiêu thụ dùng giới hạn trong `SwiftRide.Messaging`; sau khi hết retry MassTransit chuyển tin sang queue `_error`.
 
-Hiện tại luồng dropoff vẫn phát `RideCompleted` và chưa khởi tạo Saga/`ProcessPayment`, nên scheduler chỉ hoạt động với Saga được tạo trong bước tích hợp tiếp theo. Refund timeout chưa được lập lịch vì luồng `RefundPayment` cũng chưa được nối vào runtime.
+Hiện tại luồng dropoff vẫn phát `RideCompleted` và chưa khởi tạo Saga/`ProcessPayment`, nên scheduler chỉ hoạt động với Saga được tạo trong bước tích hợp tiếp theo. Refund timeout chưa được lập lịch vì Trip chưa phát `RefundPayment` trong runtime.
+
+## Payment thực thi lệnh hoàn
+
+`RefundPaymentConsumer` nhận queue `payment.refund-payment`, kiểm tra correlation, `PaymentId`, số tiền, reason code và key `trip:{TripId}:refund:v1`. Consumer dùng `RefundAppService.RefundInsideTransactionAsync` để giữ nguyên quy tắc đảo ledger gốc và gateway CARD. Trong cùng transaction, Payment lưu refund, `RefundReceipt`, checkpoint `ProcessedMessage` và `PaymentRefunded` trong outbox. Gửi lại cùng `EventId` chỉ đọc checkpoint, không tạo refund thứ hai. `PaymentOutboxPublisher` phát kết quả sau commit.
+
+Payment không tìm thấy, sai Trip/số tiền, refund không hợp lệ hoặc thiếu số dư người nhận được trả bằng `PaymentRefundFailed` với mã ổn định. Khi nghiệp vụ refund ném lỗi xác định, giao dịch thử hoàn rollback trước; checkpoint và event thất bại được lưu trong giao dịch mới. Lỗi hạ tầng/gateway không bị coi là refund thất bại: MassTransit retry có giới hạn và sau đó chuyển `_error` để điều tra. Trip vẫn cần consumer kết quả refund và bước phát command để hoàn tất Saga.

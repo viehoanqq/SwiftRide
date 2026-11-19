@@ -53,6 +53,12 @@ public sealed class PaymentOutboxPublisher(
                     case nameof(PaymentFailed):
                         await publisher.Publish(Deserialize<PaymentFailed>(message), cancellationToken);
                         break;
+                    case nameof(PaymentRefunded):
+                        await publisher.Publish(Deserialize<PaymentRefunded>(message), cancellationToken);
+                        break;
+                    case nameof(PaymentRefundFailed):
+                        await publisher.Publish(Deserialize<PaymentRefundFailed>(message), cancellationToken);
+                        break;
                     default:
                         throw new InvalidOperationException($"Unsupported Payment outbox type: {message.Type}");
                 }

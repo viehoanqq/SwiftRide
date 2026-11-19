@@ -14,34 +14,47 @@ public sealed class RefundAppService(IPaymentRepository payments, IRefundReposit
     public Task<RefundPaymentResponse> RefundAsync(Guid paymentId, RefundPaymentRequest request,
         string idempotencyKey, CancellationToken cancellationToken)
     {
+        Validate(paymentId, request, idempotencyKey);
+        return unitOfWork.ExecuteAsync(ct => RefundInsideTransactionAsync(
+            paymentId, request, idempotencyKey, ct), cancellationToken);
+    }
+
+    // The Saga consumer owns the outer transaction and stages its checkpoint/outbox in it.
+    public async Task<RefundPaymentResponse> RefundInsideTransactionAsync(Guid paymentId,
+        RefundPaymentRequest request, string idempotencyKey, CancellationToken cancellationToken)
+    {
+        var reason = Validate(paymentId, request, idempotencyKey);
+        var ct = cancellationToken;
+        await refunds.LockRequestAsync(idempotencyKey, paymentId, ct);
+        var receipt = await refunds.GetByIdempotencyKeyAsync(idempotencyKey, ct);
+        if (receipt is not null)
+        {
+            if (receipt.PaymentId != paymentId || receipt.Reason != reason)
+                throw new ConflictException(PaymentErrorCodes.IdempotencyConflict, "Refund key was used with a different payload.");
+            return receipt.Response;
+        }
+        var payment = await payments.GetByIdAsync(paymentId, ct)
+            ?? throw new NotFoundException(PaymentErrorCodes.PaymentNotFound, "Payment not found.");
+        var accountIds = payment.Entries.Select(e => e.AccountId).Distinct().ToArray();
+        var locked = await accounts.GetForUpdateAsync(accountIds, ct);
+        PaymentSettlement.Refund(payment, locked);
+        if (payment.Method == PaymentMethodType.Card)
+        {
+            if (cardGateway is null)
+                throw new ValidationException("CARD refund is not configured.");
+            await cardGateway.RefundAsync(payment.IdempotencyKey, idempotencyKey, payment.Amount, ct);
+        }
+        var response = new RefundPaymentResponse(PaymentState.REFUNDED);
+        await refunds.AddAsync(new RefundReceipt(idempotencyKey, paymentId, reason, response, DateTime.UtcNow), ct);
+        return response;
+    }
+
+    private static string Validate(Guid paymentId, RefundPaymentRequest request, string idempotencyKey)
+    {
         var reason = request.Reason?.Trim();
         if (paymentId == Guid.Empty || string.IsNullOrWhiteSpace(reason) || reason.Length > 500 ||
             string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 100)
             throw new ValidationException("Payment ID, reason (1–500 characters) and Idempotency-Key (1–100 characters) are required.");
-        return unitOfWork.ExecuteAsync(async ct =>
-        {
-            await refunds.LockRequestAsync(idempotencyKey, paymentId, ct);
-            var receipt = await refunds.GetByIdempotencyKeyAsync(idempotencyKey, ct);
-            if (receipt is not null)
-            {
-                if (receipt.PaymentId != paymentId || receipt.Reason != reason)
-                    throw new ConflictException(PaymentErrorCodes.IdempotencyConflict, "Refund key was used with a different payload.");
-                return receipt.Response;
-            }
-            var payment = await payments.GetByIdAsync(paymentId, ct)
-                ?? throw new NotFoundException(PaymentErrorCodes.PaymentNotFound, "Payment not found.");
-            var accountIds = payment.Entries.Select(e => e.AccountId).Distinct().ToArray();
-            var locked = await accounts.GetForUpdateAsync(accountIds, ct);
-            PaymentSettlement.Refund(payment, locked);
-            if (payment.Method == PaymentMethodType.Card)
-            {
-                if (cardGateway is null)
-                    throw new ValidationException("CARD refund is not configured.");
-                await cardGateway.RefundAsync(payment.IdempotencyKey, idempotencyKey, payment.Amount, ct);
-            }
-            var response = new RefundPaymentResponse(PaymentState.REFUNDED);
-            await refunds.AddAsync(new RefundReceipt(idempotencyKey, paymentId, reason, response, DateTime.UtcNow), ct);
-            return response;
-        }, cancellationToken);
+        return reason;
     }
 }
