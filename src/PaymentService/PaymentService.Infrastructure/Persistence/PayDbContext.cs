@@ -13,6 +13,8 @@ public class PayDbContext(DbContextOptions<PayDbContext> options) : DbContext(op
     public DbSet<RefundReceipt> RefundReceipts => Set<RefundReceipt>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<ProcessedMessage> ProcessedMessages => Set<ProcessedMessage>();
+    public DbSet<FakeCardAuthorization> FakeCardAuthorizations => Set<FakeCardAuthorization>();
+    public DbSet<FakeCardRefund> FakeCardRefunds => Set<FakeCardRefund>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

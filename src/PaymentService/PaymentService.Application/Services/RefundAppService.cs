@@ -2,12 +2,14 @@ using PaymentService.Application.DTOs;
 using PaymentService.Application.Exceptions;
 using PaymentService.Application.Interfaces;
 using PaymentService.Domain.Services;
+using PaymentService.Domain.Enums;
 using SwiftRide.Contracts.Payments;
 
 namespace PaymentService.Application.Services;
 
 public sealed class RefundAppService(IPaymentRepository payments, IRefundRepository refunds,
-    IAccountRepository accounts, IUnitOfWork unitOfWork) : IRefundAppService
+    IAccountRepository accounts, IUnitOfWork unitOfWork,
+    ICardAuthorizationGateway? cardGateway = null) : IRefundAppService
 {
     public Task<RefundPaymentResponse> RefundAsync(Guid paymentId, RefundPaymentRequest request,
         string idempotencyKey, CancellationToken cancellationToken)
@@ -31,6 +33,12 @@ public sealed class RefundAppService(IPaymentRepository payments, IRefundReposit
             var accountIds = payment.Entries.Select(e => e.AccountId).Distinct().ToArray();
             var locked = await accounts.GetForUpdateAsync(accountIds, ct);
             PaymentSettlement.Refund(payment, locked);
+            if (payment.Method == PaymentMethodType.Card)
+            {
+                if (cardGateway is null)
+                    throw new ValidationException("CARD refund is not configured.");
+                await cardGateway.RefundAsync(payment.IdempotencyKey, idempotencyKey, payment.Amount, ct);
+            }
             var response = new RefundPaymentResponse(PaymentState.REFUNDED);
             await refunds.AddAsync(new RefundReceipt(idempotencyKey, paymentId, reason, response, DateTime.UtcNow), ct);
             return response;

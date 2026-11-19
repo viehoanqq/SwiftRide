@@ -87,7 +87,7 @@ public class RideCompletedConsumerTests
             IPaymentMethodProcessorFactory factory = new PaymentMethodProcessorFactory(
             [
                 new WalletPaymentProcessor(accounts, options),
-                new CardPaymentProcessor(accounts, new FakeCardAuthorizationGateway(), options)
+                new CardPaymentProcessor(accounts, new FakeCardAuthorizationGateway(db), options)
             ]);
             var checkout = new PaymentCheckoutService(new PaymentRepository(db), accounts, uow, options, factory);
             var consumer = new RideCompletedConsumer(checkout, uow, db);

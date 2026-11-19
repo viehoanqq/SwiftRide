@@ -1,5 +1,18 @@
 # Contract Card giả lập của Payment Service
 
+## Adapter gateway: tra cứu và refund
+
+`FakeCardAuthorizationGateway` lưu kết quả authorization theo `IdempotencyKey` trong
+`fake_card_authorizations`. `FindAuthorizationAsync` tra cứu kết quả đã lưu sau khi service
+khởi động lại. Cùng key và payload trả kết quả cũ; key cũ với token hoặc số tiền khác
+trả `IDEMPOTENCY_CONFLICT`.
+
+Refund Card gọi `RefundAsync` của adapter trong cùng transaction với
+`PaymentSettlement.Refund` và `RefundReceipt`. Adapter chỉ nhận authorization `Approved`
+với đúng số tiền gốc, lưu một bản ghi `fake_card_refunds` theo refund key.
+Cùng refund key trả kết quả cũ; một authorization không thể có hai refund key.
+Adapter không tự sửa số dư hoặc ledger; toàn bộ đây là giao dịch giả lập.
+
 Card giả lập dùng **ba token cố định** để kiểm tra luồng thanh toán trong `Development` và `Testing`. Nó không kết nối ngân hàng, không nhận số thẻ/CVV và không thực hiện thu hoặc hoàn tiền thật.
 
 ## Bật tính năng
@@ -8,7 +21,7 @@ Card giả lập dùng **ba token cố định** để kiểm tra luồng thanh 
 
 ## Input và kết quả
 
-`POST /payments` vẫn dùng `CreatePaymentRequest` hiện có: `Method="CARD"`, `CardToken` và `IdempotencyKey`. `RideCompleted` cũng có `CardToken`, nhưng Trip hiện **chưa lưu/truyền CardToken từ TripFare** nên chưa thể chạy Card qua toàn bộ luồng dropoff; đường thử hiện tại là Payment API hoặc test consumer dựng event có token.
+`POST /payments` dùng `CreatePaymentRequest`: `Method="CARD"`, `CardToken` và `IdempotencyKey`. Luồng Trip nhận `CardToken` khi xác nhận chuyến, lưu vào `TripFare` và truyền tiếp trong `RideCompleted` lúc dropoff.
 
 | `CardToken` | Kết quả giả lập | Payment | Ledger/số dư | Kết quả cho Trip |
 | --- | --- | --- | --- | --- |
@@ -36,7 +49,7 @@ PaymentCheckoutService
   → UnitOfWork lưu Payment + Account + Ledger trong PostgreSQL
 ```
 
-Factory chỉ **chọn** processor. Cả hai processor dùng `PaymentSettlement`, `MoneyRules.Split` và `PaymentOptions.DriverRate` đang có. Không có `LedgerService` mới hoặc tỷ lệ chia `80/20` hardcode. `FakeCardAuthorizationGateway` chỉ trả quyết định từ token; nó không sửa balance/ledger. Domain `PaymentSettlement.ChargeCard` mới là nơi chia tiền và ghi ba bút toán. `PaymentSettlement.Refund` vẫn xử lý hoàn tiền cho cả Wallet và Card.
+Factory chỉ **chọn** processor. Cả hai processor dùng `PaymentSettlement`, `MoneyRules.Split` và `PaymentOptions.DriverRate` đang có. Không có `LedgerService` mới hoặc tỷ lệ chia `80/20` hardcode. `FakeCardAuthorizationGateway` lưu quyết định và refund giả lập; nó không sửa balance/ledger. Domain `PaymentSettlement.ChargeCard` chia tiền và ghi ba bút toán. `PaymentSettlement.Refund` xử lý hoàn tiền cho cả Wallet và Card.
 
 ## Vị trí code
 

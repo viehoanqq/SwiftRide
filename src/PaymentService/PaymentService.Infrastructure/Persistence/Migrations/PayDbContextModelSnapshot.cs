@@ -294,6 +294,72 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                     b.ToTable("payments", (string)null);
                 });
 
+            modelBuilder.Entity("PaymentService.Infrastructure.Messaging.FakeCardAuthorization", b =>
+                {
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("result");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("token");
+
+                    b.HasKey("IdempotencyKey")
+                        .HasName("pk_fake_card_authorizations");
+
+                    b.ToTable("fake_card_authorizations", (string)null);
+                });
+
+            modelBuilder.Entity("PaymentService.Infrastructure.Messaging.FakeCardRefund", b =>
+                {
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("AuthorizationKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("authorization_key");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.HasKey("IdempotencyKey")
+                        .HasName("pk_fake_card_refunds");
+
+                    b.HasIndex("AuthorizationKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_fake_card_refunds_authorization_key");
+
+                    b.ToTable("fake_card_refunds", (string)null);
+                });
+
             modelBuilder.Entity("PaymentService.Infrastructure.Messaging.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -376,6 +442,16 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_ledger_entries_payments_payment_id");
+                });
+
+            modelBuilder.Entity("PaymentService.Infrastructure.Messaging.FakeCardRefund", b =>
+                {
+                    b.HasOne("PaymentService.Infrastructure.Messaging.FakeCardAuthorization", null)
+                        .WithMany()
+                        .HasForeignKey("AuthorizationKey")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_fake_card_refunds_fake_card_authorizations_authorization_key");
                 });
 
             modelBuilder.Entity("PaymentService.Domain.Entities.Payment", b =>

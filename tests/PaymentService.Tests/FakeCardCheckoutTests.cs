@@ -29,13 +29,56 @@ public sealed class FakeCardCheckoutTests
         IPaymentMethodProcessorFactory factory = new PaymentMethodProcessorFactory(
         [
             new WalletPaymentProcessor(accounts, options),
-            new CardPaymentProcessor(accounts, new FakeCardAuthorizationGateway(), options)
+            new CardPaymentProcessor(accounts, new FakeCardAuthorizationGateway(db), options)
         ]);
         return new PaymentCheckoutService(new PaymentRepository(db), accounts, new UnitOfWork(db), options, factory);
     }
 
     private static CreatePaymentRequest Request(string token) => new(Guid.NewGuid(), RiderId, DriverId,
         50_000m, PaymentMethod.CARD, Guid.NewGuid().ToString("D"), token);
+
+    [PostgresFact]
+    public async Task Gateway_AuthorizationLookupAndRefundAreIdempotentAcrossContexts()
+    {
+        await using var database = await PaymentConsumerDatabase.CreateAsync();
+        const string authorizationKey = "gateway-auth-1";
+        const string refundKey = "gateway-refund-1";
+        await using (var db = database.Context())
+        {
+            var gateway = new FakeCardAuthorizationGateway(db);
+            await new UnitOfWork(db).ExecuteAsync(async ct =>
+                await gateway.AuthorizeAsync(FakeCardTokens.Approved, authorizationKey, 50_000m, ct),
+                CancellationToken.None);
+        }
+        await using (var db = database.Context())
+        {
+            var gateway = new FakeCardAuthorizationGateway(db);
+            Assert.Equal(CardAuthorizationResult.Approved,
+                await gateway.FindAuthorizationAsync(authorizationKey, CancellationToken.None));
+            await new UnitOfWork(db).ExecuteAsync(async ct =>
+            {
+                Assert.Equal(CardAuthorizationResult.Approved,
+                    await gateway.AuthorizeAsync(FakeCardTokens.Approved, authorizationKey, 50_000m, ct));
+                await gateway.RefundAsync(authorizationKey, refundKey, 50_000m, ct);
+                return 0;
+            }, CancellationToken.None);
+        }
+        await using (var db = database.Context())
+        {
+            var gateway = new FakeCardAuthorizationGateway(db);
+            await new UnitOfWork(db).ExecuteAsync(async ct =>
+            {
+                await gateway.RefundAsync(authorizationKey, refundKey, 50_000m, ct);
+                await Assert.ThrowsAsync<ConflictException>(() =>
+                    gateway.AuthorizeAsync(FakeCardTokens.Declined, authorizationKey, 50_000m, ct));
+                await Assert.ThrowsAsync<ConflictException>(() =>
+                    gateway.RefundAsync(authorizationKey, "different-refund-key", 50_000m, ct));
+                return 0;
+            }, CancellationToken.None);
+            Assert.Single(await db.FakeCardAuthorizations.ToListAsync());
+            Assert.Single(await db.FakeCardRefunds.ToListAsync());
+        }
+    }
 
     [PostgresFact]
     public async Task ApprovedCard_UsesExistingSettlementAndRefund_AndReplayIsIdempotent()
@@ -55,6 +98,10 @@ public sealed class FakeCardCheckoutTests
             var replay = await Checkout(db).CreateAsync(request, CancellationToken.None);
             Assert.True(replay.IsReplay);
             Assert.Equal(paymentId, replay.Response.PaymentId);
+            Assert.Equal(CardAuthorizationResult.Approved,
+                await new FakeCardAuthorizationGateway(db).FindAuthorizationAsync(
+                    request.IdempotencyKey, CancellationToken.None));
+            Assert.Single(await db.FakeCardAuthorizations.ToListAsync());
             var conflict = await Assert.ThrowsAsync<ConflictException>(() =>
                 Checkout(db).CreateAsync(request with { CardToken = FakeCardTokens.Declined }, CancellationToken.None));
             Assert.Equal(PaymentErrorCodes.IdempotencyConflict, conflict.Code);
@@ -73,7 +120,10 @@ public sealed class FakeCardCheckoutTests
             Assert.Equal(-50_000m, (await db.Accounts.SingleAsync(a => a.OwnerId == Account.GatewayOwnerId)).Balance);
 
             var refund = new RefundAppService(new PaymentRepository(db), new RefundRepository(db),
-                new AccountRepository(db), new UnitOfWork(db));
+                new AccountRepository(db), new UnitOfWork(db), new FakeCardAuthorizationGateway(db));
+            Assert.Equal(PaymentState.REFUNDED,
+                (await refund.RefundAsync(paymentId, new RefundPaymentRequest("test refund"),
+                    "card-refund-1", CancellationToken.None)).Status);
             Assert.Equal(PaymentState.REFUNDED,
                 (await refund.RefundAsync(paymentId, new RefundPaymentRequest("test refund"),
                     "card-refund-1", CancellationToken.None)).Status);
@@ -86,6 +136,7 @@ public sealed class FakeCardCheckoutTests
             Assert.All(payment.Entries.GroupBy(e => e.AccountId), entries => Assert.Equal(0m, entries.Sum(e => e.Amount)));
             Assert.Equal(0m, (await db.Accounts.SingleAsync(a => a.OwnerId == Account.GatewayOwnerId)).Balance);
             Assert.Single(await db.RefundReceipts.ToListAsync());
+            Assert.Single(await db.FakeCardRefunds.ToListAsync());
         }
     }
 
@@ -120,6 +171,9 @@ public sealed class FakeCardCheckoutTests
         await using var verify = database.Context();
         var payment = Assert.Single(await verify.Payments.ToListAsync());
         Assert.Equal(PaymentStatus.Pending, payment.Status);
+        Assert.Equal(CardAuthorizationResult.Unknown,
+            await new FakeCardAuthorizationGateway(verify).FindAuthorizationAsync(
+                request.IdempotencyKey, CancellationToken.None));
         Assert.Equal(1, payment.AttemptCount);
         Assert.Empty(await verify.LedgerEntries.ToListAsync());
         Assert.Equal(0m, (await verify.Accounts.SingleAsync(a => a.OwnerId == Account.GatewayOwnerId)).Balance);

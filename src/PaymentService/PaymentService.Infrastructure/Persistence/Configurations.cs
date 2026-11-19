@@ -107,3 +107,29 @@ public class RefundReceiptConfiguration : IEntityTypeConfiguration<RefundReceipt
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+public class FakeCardAuthorizationConfiguration : IEntityTypeConfiguration<FakeCardAuthorization>
+{
+    public void Configure(EntityTypeBuilder<FakeCardAuthorization> builder)
+    {
+        builder.HasKey(a => a.IdempotencyKey);
+        builder.Property(a => a.IdempotencyKey).HasMaxLength(100);
+        builder.Property(a => a.Token).HasMaxLength(100).IsRequired();
+        builder.Property(a => a.Amount).HasPrecision(18, 2);
+        builder.Property(a => a.Result).AsUpperString(10);
+    }
+}
+
+public class FakeCardRefundConfiguration : IEntityTypeConfiguration<FakeCardRefund>
+{
+    public void Configure(EntityTypeBuilder<FakeCardRefund> builder)
+    {
+        builder.HasKey(r => r.IdempotencyKey);
+        builder.Property(r => r.IdempotencyKey).HasMaxLength(100);
+        builder.Property(r => r.AuthorizationKey).HasMaxLength(100).IsRequired();
+        builder.Property(r => r.Amount).HasPrecision(18, 2);
+        builder.HasIndex(r => r.AuthorizationKey).IsUnique();
+        builder.HasOne<FakeCardAuthorization>().WithMany()
+            .HasForeignKey(r => r.AuthorizationKey).OnDelete(DeleteBehavior.Restrict);
+    }
+}
