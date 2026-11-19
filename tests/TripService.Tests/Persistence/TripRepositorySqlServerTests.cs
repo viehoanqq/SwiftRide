@@ -25,6 +25,45 @@ public sealed class SqlServerFactAttribute : FactAttribute
 public class TripRepositorySqlServerTests
 {
     [SqlServerFact]
+    public async Task PaymentTimeout_QueuesOnceAndSkipsCompletedSaga()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var dueTrip = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01, SeedData.Rider01);
+        var completedTrip = TripDriverWorkflowTests.OfferedTrip(SeedData.Driver01, SeedData.Rider01);
+        var now = DateTime.UtcNow;
+        await using (var seed = database.Context())
+        {
+            seed.Trips.AddRange(dueTrip, completedTrip);
+            seed.PaymentSagas.Add(PaymentSagaInstance.Start(dueTrip.Id, Guid.NewGuid(),
+                now.AddMinutes(-1), now.AddMinutes(-2)));
+            var completed = PaymentSagaInstance.Start(completedTrip.Id, Guid.NewGuid(),
+                now.AddMinutes(-1), now.AddMinutes(-2));
+            completed.Apply(PaymentSagaSignal.PaymentSettled, now);
+            seed.PaymentSagas.Add(completed);
+            await seed.SaveChangesAsync();
+        }
+
+        var options = new PaymentSagaTimeoutOptions(TimeSpan.FromSeconds(5), 50);
+        await using (var db = database.Context())
+        {
+            var scheduler = new PaymentSagaTimeoutDispatcher(db, new TripRepository(db), options);
+            Assert.Equal(1, await scheduler.DispatchAsync(CancellationToken.None));
+        }
+        await using (var db = database.Context())
+        {
+            var scheduler = new PaymentSagaTimeoutDispatcher(db, new TripRepository(db), options);
+            Assert.Equal(0, await scheduler.DispatchAsync(CancellationToken.None));
+        }
+
+        await using var verify = database.Context();
+        var saga = await verify.PaymentSagas.SingleAsync(s => s.TripId == dueTrip.Id);
+        var outbox = await verify.OutboxMessages.SingleAsync();
+        Assert.Equal(saga.PaymentTimeoutEventId, outbox.Id);
+        Assert.Equal(nameof(ProcessPaymentTimedOut), outbox.Type);
+        Assert.Equal(PaymentSagaState.AwaitingPayment, saga.State);
+    }
+
+    [SqlServerFact]
     public async Task SagaStart_CommitsTripHistoryAndProcessPaymentOutboxTogether()
     {
         await using var database = await TestDatabase.CreateAsync();

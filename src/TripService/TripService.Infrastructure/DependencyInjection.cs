@@ -26,6 +26,12 @@ public static class DependencyInjection
             options.UseSqlServer(configuration.GetConnectionString("TripDb")));
         services.AddScoped<ITripRepository, TripRepository>();     // thÃªm: dÃ¹ng DbContext nÃªn Scoped
         services.AddScoped<IPaymentSagaRepository, PaymentSagaRepository>();
+        services.AddScoped<PaymentSagaTimeoutDispatcher>();
+        var timeoutPollSeconds = configuration.GetValue("PaymentSaga:TimeoutPollSeconds", 5);
+        var timeoutBatchSize = configuration.GetValue("PaymentSaga:TimeoutBatchSize", 50);
+        if (timeoutPollSeconds is < 1 or > 300 || timeoutBatchSize is < 1 or > 500)
+            throw new InvalidOperationException("Payment Saga timeout poll seconds must be 1-300 and batch size 1-500.");
+        services.AddSingleton(new PaymentSagaTimeoutOptions(TimeSpan.FromSeconds(timeoutPollSeconds), timeoutBatchSize));
         services.AddScoped<TripPaymentResultHandler>();
 
         services.AddHttpContextAccessor();
@@ -58,9 +64,14 @@ public static class DependencyInjection
                     .Endpoint(endpoint => endpoint.Name = QueueNames.TripPaymentSettled);
                 bus.AddConsumer<PaymentFailedConsumer>()
                     .Endpoint(endpoint => endpoint.Name = QueueNames.TripPaymentFailed);
+                bus.AddConsumer<ProcessPaymentTimedOutConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.TripProcessPaymentTimedOut);
             });
         if (environment?.IsEnvironment("Testing") != true)
+        {
             services.AddHostedService<TripOutboxPublisher>();
+            services.AddHostedService<PaymentSagaTimeoutScheduler>();
+        }
         return services;
     }
 

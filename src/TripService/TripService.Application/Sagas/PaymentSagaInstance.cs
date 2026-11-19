@@ -8,6 +8,7 @@ public sealed class PaymentSagaInstance
     public PaymentSagaState State { get; set; }
     public Guid ProcessPaymentEventId { get; set; }
     public DateTime PaymentDeadlineAt { get; set; }
+    public Guid? PaymentTimeoutEventId { get; set; }
     public Guid? PaymentId { get; set; }
     public Guid? RefundPaymentEventId { get; set; }
     public DateTime? RefundDeadlineAt { get; set; }

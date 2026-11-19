@@ -62,6 +62,9 @@ public sealed class TripOutboxPublisher(
                     case nameof(ProcessPayment):
                         await publisher.Publish(Deserialize<ProcessPayment>(message), cancellationToken);
                         break;
+                    case nameof(ProcessPaymentTimedOut):
+                        await publisher.Publish(Deserialize<ProcessPaymentTimedOut>(message), cancellationToken);
+                        break;
                     case nameof(RefundPayment):
                         await publisher.Publish(Deserialize<RefundPayment>(message), cancellationToken);
                         break;

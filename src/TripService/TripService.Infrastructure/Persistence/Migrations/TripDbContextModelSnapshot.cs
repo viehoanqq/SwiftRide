@@ -40,6 +40,9 @@ namespace TripService.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("PaymentId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("PaymentTimeoutEventId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("ProcessPaymentEventId")
                         .HasColumnType("uniqueidentifier");
 

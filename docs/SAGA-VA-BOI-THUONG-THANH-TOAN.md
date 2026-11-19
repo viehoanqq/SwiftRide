@@ -73,7 +73,7 @@ Khi Trip ở `RefundPending`, API đọc chuyến cần trả trạng thái đó
 
 ### Bảng chuyển trạng thái Payment Saga
 
-Quy tắc thuần đã được định nghĩa trong `TripService.Application/Sagas/PaymentSagaTransitions.cs`. **Chưa có Saga persistence, consumer hay scheduler gọi quy tắc này.** `Completed` nghĩa là Trip đã ghi `Paid` cùng history/outbox, không đợi Matching giải phóng tài xế. `Failed` chỉ dùng khi Payment xác nhận chưa thu được tiền. `NeedsAttention` giữ nguyên trạng thái Trip đã biết và thêm cờ cần đối soát; nó không tự biến khoản thu thành thất bại.
+Quy tắc thuần đã được định nghĩa trong `TripService.Application/Sagas/PaymentSagaTransitions.cs`. Saga persistence và consumer timeout đã gọi quy tắc này; dropoff chưa khởi tạo Saga trong runtime. `Completed` nghĩa là Trip đã ghi `Paid` cùng history/outbox, không đợi Matching giải phóng tài xế. `Failed` chỉ dùng khi Payment xác nhận chưa thu được tiền. `NeedsAttention` giữ nguyên trạng thái Trip đã biết và thêm cờ cần đối soát; nó không tự biến khoản thu thành thất bại.
 
 | Saga hiện tại | Tín hiệu | Saga tiếp theo | Điều kiện và thao tác cần lưu cùng transaction |
 | --- | --- | --- | --- |
@@ -100,11 +100,11 @@ Các cặp trạng thái/tín hiệu không có trong bảng bị từ chối. C
 
 `PaymentSagaRepository` dùng chung `TripDbContext` với `TripRepository`. Khi bắt đầu Saga ở dropoff, thêm Saga và `ProcessPayment` vào context rồi gọi **một lần** `TripRepository.SaveChangesAsync`; nhánh `PaymentPending` hiện có transaction/khóa gán tài xế. Khi xử lý kết quả hay refund, thay đổi Saga, Trip, history, checkpoint và outbox trên cùng context rồi gọi **một lần** `PaymentSagaRepository.SaveChangesAsync` để commit/rollback toàn bộ. Không gọi hai `SaveChangesAsync` riêng cho hai repository.
 
-Trip outbox đã chấp nhận và publisher đã biết cách phát `ProcessPayment`/`RefundPayment`. Hiện chưa có code runtime tạo command, consumer hoặc scheduler mới; luồng `RideCompleted` hiện tại vẫn chạy. Khi chuyển sang `ProcessPayment`, cần đổi `TripPaymentResultHandler` để đối chiếu `CausationId` với command mới thay vì chỉ tìm `RideCompleted` như hiện nay.
+Trip outbox đã chấp nhận và publisher đã biết cách phát `ProcessPayment`/`RefundPayment`/`ProcessPaymentTimedOut`. Scheduler và consumer timeout đã có; runtime chưa tạo command `ProcessPayment`, luồng `RideCompleted` hiện tại vẫn chạy. Khi chuyển sang `ProcessPayment`, cần đổi `TripPaymentResultHandler` để đối chiếu `CausationId` với command mới thay vì chỉ tìm `RideCompleted` như hiện nay.
 
 ## 4. Hợp đồng message cần thêm — Cần triển khai
 
-Luồng runtime hiện tại có bảy integration event. Các record Payment Saga `ProcessPayment`, `ProcessPaymentTimedOut`, `RefundPayment`, `PaymentRefunded`, `PaymentRefundFailed` đã được khai báo ở `SwiftRide.Contracts.Events`, nhưng **chưa có publisher/consumer sử dụng chúng**. `PaymentRefunded` dùng queue dự kiến `trip.payment-refunded`:
+Luồng runtime hiện tại có bảy integration event. Các record Payment Saga `ProcessPayment`, `ProcessPaymentTimedOut`, `RefundPayment`, `PaymentRefunded`, `PaymentRefundFailed` đã được khai báo ở `SwiftRide.Contracts.Events`. Timeout đã có publisher/consumer; các command và kết quả Saga còn lại chưa nối vào runtime. `PaymentRefunded` dùng queue dự kiến `trip.payment-refunded`:
 
 ```csharp
 public sealed record PaymentRefunded(
@@ -157,3 +157,11 @@ Trip Saga là nơi **quyết định** có bồi thường; Payment là nơi **t
 - Chốt một compensation duy nhất cho mỗi Trip/Payment; retry giữ nguyên key và không nhân đôi ledger/refund.
 - Test các trường hợp: Payment đã thu nhưng Trip/Matching tạm lỗi; `Unknown`; mismatch cần đối soát; refund thành công; refund thiếu số dư người nhận; duplicate/out-of-order `PaymentRefunded`; `TripClosed` đến muộn khi driver đã nhận chuyến mới.
 - UI/API phân biệt rõ `PaymentPending`, `RefundPending`, `Refunded` và `PaymentFailed`; chỉ báo hoàn tiền khi Payment xác nhận.
+
+## Scheduler timeout thanh toán
+
+`PaymentSagaTimeoutScheduler` quét `PaymentSagas` mỗi `PaymentSaga__TimeoutPollSeconds` (mặc định 5 giây), tối đa `PaymentSaga__TimeoutBatchSize` (mặc định 50) Saga mỗi lượt. Nó chỉ chọn Saga `AwaitingPayment` đã qua `PaymentDeadlineAt` và chưa có `PaymentTimeoutEventId`. SQL Server `UPDLOCK/READPAST` khóa các dòng được chọn để nhiều bản Trip không cùng lập lịch. Trong một transaction, worker lưu `PaymentTimeoutEventId` và event `ProcessPaymentTimedOut` vào Trip outbox. Publisher hiện có gửi event qua RabbitMQ; nếu broker tắt, outbox giữ event và gửi lại khi kết nối phục hồi.
+
+Consumer `trip.process-payment-timed-out` kiểm tra TripId, correlation, command ID, deadline và timeout event ID. Nếu kết quả thanh toán đã đến hoặc timeout cũ, nó bỏ qua. Nếu còn `AwaitingPayment`, Saga chuyển sang `PaymentUncertain`; Trip không bị đổi thành `PaymentFailed` và không tự refund. Trạng thái này cần bước đối soát Payment trước khi chốt thành công, thất bại hoặc bồi thường. Retry tiêu thụ dùng giới hạn trong `SwiftRide.Messaging`; sau khi hết retry MassTransit chuyển tin sang queue `_error`.
+
+Hiện tại luồng dropoff vẫn phát `RideCompleted` và chưa khởi tạo Saga/`ProcessPayment`, nên scheduler chỉ hoạt động với Saga được tạo trong bước tích hợp tiếp theo. Refund timeout chưa được lập lịch vì luồng `RefundPayment` cũng chưa được nối vào runtime.
