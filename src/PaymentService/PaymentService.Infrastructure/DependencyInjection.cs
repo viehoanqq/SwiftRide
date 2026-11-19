@@ -29,6 +29,13 @@ public static class DependencyInjection
         services.AddScoped<ILedgerRepository, LedgerRepository>();
         services.AddScoped<IRefundRepository, RefundRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped<IPaymentMethodProcessor, WalletPaymentProcessor>();
+        if (environment?.IsDevelopment() == true || environment?.IsEnvironment("Testing") == true)
+        {
+            services.AddScoped<ICardAuthorizationGateway, FakeCardAuthorizationGateway>();
+            services.AddScoped<IPaymentMethodProcessor, CardPaymentProcessor>();
+        }
+        services.AddScoped<IPaymentMethodProcessorFactory, PaymentMethodProcessorFactory>();
         services.AddScoped<PaymentCheckoutService>();
         services.AddScoped<IPaymentCheckoutService>(sp => sp.GetRequiredService<PaymentCheckoutService>());
         services.AddSwiftRideMessaging(configuration, environment,

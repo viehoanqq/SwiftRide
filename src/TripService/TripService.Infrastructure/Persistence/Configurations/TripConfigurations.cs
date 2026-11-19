@@ -61,6 +61,7 @@ public class TripFareConfiguration : IEntityTypeConfiguration<TripFare>
         builder.Property(f => f.QuoteId).HasMaxLength(50).IsUnicode(false).IsRequired();
         builder.Property(f => f.Price).HasPrecision(18, 2);
         builder.Property(f => f.PaymentMethod).HasConversion<string>().HasMaxLength(10).IsUnicode(false);
+        builder.Property(f => f.CardToken).HasMaxLength(100).IsUnicode(false);
         builder.Property(f => f.Status).HasConversion<string>().HasMaxLength(10).IsUnicode(false);
         builder.Property(f => f.Strategy).HasMaxLength(20).IsUnicode(false).IsRequired();   // ← THÊM
 

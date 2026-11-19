@@ -123,7 +123,14 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
                 throw new ValidationException("Phương thức thanh toán không hợp lệ. Chỉ chấp nhận WALLET hoặc CARD.");
             }
 
+            if (paymentMethod == PaymentMethod.Card &&
+                (string.IsNullOrWhiteSpace(request.CardToken) || request.CardToken.Length > 100))
+                throw new ValidationException("CARD yêu cầu CardToken hợp lệ (tối đa 100 ký tự).");
+            if (paymentMethod == PaymentMethod.Wallet && request.CardToken is not null)
+                throw new ValidationException("WALLET không nhận CardToken.");
+
             trip.Confirm(paymentMethod);
+            trip.Fare!.CardToken = request.CardToken;
 
             var matchedDriver = await matching.MatchAsync(new MatchDriverRequest(
                 (double)trip.Location.PickupLat,
@@ -328,7 +335,7 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
         };
         trips.AddOutboxEvent(new RideCompleted(
             Guid.NewGuid(), trip.Id, null, DateTime.UtcNow,
-            trip.Id, trip.RiderId, driverId, trip.Fare.Price, paymentMethod));
+            trip.Id, trip.RiderId, driverId, trip.Fare.Price, paymentMethod, trip.Fare.CardToken));
         await trips.SaveChangesAsync();
         return new TripDriverActionResponse(trip.Status.ToString());
     }

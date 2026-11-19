@@ -1,9 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Moq;
 using PaymentService.Application.DTOs;
 using PaymentService.Application.Interfaces;
+using PaymentService.Application.Exceptions;
+using PaymentService.Application.Options;
+using PaymentService.Application.Services;
 using PaymentService.Domain.Entities;
 using PaymentService.Domain.Enums;
 using PaymentService.Infrastructure;
@@ -15,6 +19,35 @@ namespace PaymentService.Tests;
 
 public class PaymentInfrastructureTests
 {
+    [Theory]
+    [InlineData("Development", true)]
+    [InlineData("Testing", true)]
+    [InlineData("Production", false)]
+    public void FakeCardProcessor_IsRegisteredOnlyInAllowedEnvironments(string environmentName, bool available)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:PayDb"] = "Host=localhost;Port=5433;Database=PayDb;Username=swiftride;Password=swiftride"
+        }).Build();
+        var environment = new Mock<IHostEnvironment>();
+        environment.SetupGet(e => e.EnvironmentName).Returns(environmentName);
+        var services = new ServiceCollection();
+        services.AddSingleton(new PaymentOptions
+        {
+            DriverRate = 0.8m,
+            FakeCard = new FakeCardOptions { Enabled = true }
+        });
+        services.AddInfrastructure(configuration, environment.Object);
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var factory = scope.ServiceProvider.GetRequiredService<IPaymentMethodProcessorFactory>();
+
+        if (available)
+            Assert.IsType<CardPaymentProcessor>(factory.For(PaymentMethod.CARD));
+        else
+            Assert.Throws<ValidationException>(() => factory.For(PaymentMethod.CARD));
+    }
+
     private static PayDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<PayDbContext>()

@@ -8,7 +8,7 @@
 - `POST /payments/{id}/refund`: gọi trực tiếp Payment, token `sub=trip-service` có scope `payments:refund`; Gateway trả 403. Body `{ "reason": "Customer request" }`, header `Idempotency-Key` bắt buộc.
 - Cùng refund key/payment/reason đã trim trả kết quả cũ; khác payload trả `409 IDEMPOTENCY_CONFLICT`. Key khác cho payment đã refund trả `409 REFUND_NOT_ALLOWED`.
 - Refund khóa key/payment và các account trong transaction, đảo ba CHARGE gốc; giữ nguyên CHARGE, thêm REFUND. Không tính lại DriverRate. Thiếu tiền ở Driver/Platform trả `409 REFUND_INSUFFICIENT_FUNDS`, không thay đổi dữ liệu.
-- Domain `PaymentSettlement` chịu trách nhiệm kiểm tra account, số dư, tính chia tiền, đổi trạng thái và tạo ledger. Application chỉ điều phối repository/transaction. CARD domain nhận kết quả dứt khoát từ provider; HTTP checkout CARD vẫn bị chặn cho đến khi tích hợp provider, không coi timeout là CARD_DECLINED.
+- Domain `PaymentSettlement` chịu trách nhiệm kiểm tra account, số dư, tính chia tiền, đổi trạng thái và tạo ledger. Application chỉ điều phối repository/transaction. Card giả lập hiện chỉ bật ở Development/Testing; xem [contract Card giả lập](CARD-GIA-LAP-CONTRACT.md). Kết quả `unknown` không được coi là `CARD_DECLINED`.
 - Migration `AddRefundReceipts` đã có; Payment tự áp dụng khi khởi động. Không cần migration mới cho phần này.
 
 ## Cập nhật: ánh xạ kết quả sang Trip
@@ -23,7 +23,7 @@ Mapper đã nối vào dropoff qua PaymentClient. Timeout/HTTP error chưa rõ k
 tra lại theo TripId và kiểm tra amount/method trước khi chấp nhận kết quả cuối.
 
 Ngày 16/11: POST /payments và GET /payments/by-trip/{tripId} đã nối PaymentCheckoutService.
-Checkout hiện hỗ trợ WALLET; CARD trả 400 cho đến khi có provider/giả lập được chốt.
+Checkout hỗ trợ WALLET; CARD dùng provider giả lập khi bật trong Development/Testing và bị từ chối ở Production.
 PostgreSQL khóa transaction theo key và TripId trước khi đọc payment, rồi khóa các ví theo ID.
 Replay cùng payload trả 200; khác payload trả 409 IDEMPOTENCY_CONFLICT; key khác nhưng cùng chuyến
 trả 409 TRIP_PAYMENT_EXISTS. Payment, số dư, ledger commit cùng transaction.
@@ -51,7 +51,7 @@ không phải thông báo các API Payment đã hoạt động.
   Driver nhận Round(amount * 0.8m, 2, AwayFromZero), Platform = amount - driverAmount.
 - WALLET ghi ba bút toán: Rider -amount, Driver +driverAmount, Platform +platformAmount.
   CARD giả lập dùng GATEWAY làm tài khoản đối ứng -amount, không trừ ví Rider.
-  Chốt implementation giả lập CardToken trước khi bật CARD; token thiếu/không hợp lệ trả 400.
+  Token Card giả lập và kết quả được định nghĩa trong [contract Card giả lập](CARD-GIA-LAP-CONTRACT.md); token thiếu/không hợp lệ trả 400.
   TripFare hiện chưa lưu CardToken: không tự suy ra token từ PaymentMethod.Card.
 - DriverAmount/PlatformAmount trong response là tổng CHARGE thực tế của tài khoản tương ứng;
   trả 0 nếu chưa ghi CHARGE. Khi REFUNDED vẫn giữ giá trị CHARGE gốc, FE phải xét status.

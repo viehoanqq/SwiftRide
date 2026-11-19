@@ -11,7 +11,7 @@ namespace PaymentService.Application.Services;
 
 public sealed class PaymentCheckoutService(
     IPaymentRepository payments, IAccountRepository accounts, IUnitOfWork unitOfWork,
-    PaymentOptions options) : IPaymentCheckoutService
+    PaymentOptions options, IPaymentMethodProcessorFactory? processors = null) : IPaymentCheckoutService
 {
     public Task<PaymentCreationResult> CreateAsync(CreatePaymentRequest request, CancellationToken cancellationToken) =>
         unitOfWork.ExecuteAsync(ct => CreateInsideTransactionAsync(request, ct), cancellationToken);
@@ -40,38 +40,20 @@ public sealed class PaymentCheckoutService(
         if (await payments.GetByTripIdAsync(request.TripId, ct) is not null)
             throw new ConflictException(PaymentErrorCodes.TripPaymentExists, "Trip already has a payment.");
 
-        // Never pretend to charge a card without a gateway implementation.
-        if (request.Method != PaymentMethod.WALLET)
-            throw new ValidationException("CARD checkout is not configured. Use WALLET.");
-        if (request.CardToken is not null)
-            throw new ValidationException("WALLET must not contain a card token.");
-
-        var rider = await RequireAccount(request.RiderId.ToString("D"), OwnerType.Rider, ct);
-        var driver = await RequireAccount(request.DriverId.ToString("D"), OwnerType.Driver, ct);
-        var platform = await RequireAccount(Account.PlatformOwnerId, OwnerType.Platform, ct);
-        var locked = await accounts.GetForUpdateAsync([rider.Id, driver.Id, platform.Id], ct);
-        if (locked.Count != 3)
-            throw new NotFoundException(PaymentErrorCodes.AccountNotFound, "Payment account is missing.");
-        rider = locked.Single(a => a.Id == rider.Id);
-        driver = locked.Single(a => a.Id == driver.Id);
-        platform = locked.Single(a => a.Id == platform.Id);
-
         var now = DateTime.UtcNow;
         var payment = new Payment
         {
             Id = Guid.NewGuid(), TripId = request.TripId, RiderId = request.RiderId,
-            DriverId = request.DriverId, Amount = request.Amount, Method = PaymentMethodType.Wallet,
+            DriverId = request.DriverId, Amount = request.Amount, Method = (PaymentMethodType)request.Method,
+            CardToken = request.CardToken,
             IdempotencyKey = request.IdempotencyKey, Status = PaymentStatus.Pending,
             CreatedAt = now, UpdatedAt = now
         };
-        PaymentService.Domain.Services.PaymentSettlement.ChargeWallet(payment, rider, driver, platform, options.DriverRate);
+        var factory = processors ?? new PaymentMethodProcessorFactory([new WalletPaymentProcessor(accounts, options)]);
+        await factory.For(request.Method).SettleAsync(payment, request, ct);
         await payments.AddAsync(payment, ct);
         return new PaymentCreationResult(new(payment.Id, State(payment.Status)), false);
     }
-
-    private async Task<Account> RequireAccount(string owner, OwnerType type, CancellationToken ct) =>
-        await accounts.GetByOwnerAsync(owner, type, ct)
-        ?? throw new NotFoundException(PaymentErrorCodes.AccountNotFound, "Payment account is missing.");
 
     public async Task<PaymentDetailResponse?> FindByTripAsync(Guid tripId, Guid? callerId, string? role, CancellationToken cancellationToken)
     {

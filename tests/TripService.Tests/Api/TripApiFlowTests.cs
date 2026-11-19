@@ -49,6 +49,25 @@ public class TripApiFlowTests
     }
 
     [Fact]
+    public async Task CardJourney_DropoffPublishesChosenTestToken()
+    {
+        using var app = new TripApiFactory();
+        using var rider = app.Client(app.Rider, "Rider");
+        using var driver = app.Client(app.Driver, "Driver");
+        var id = await Create(rider);
+        await AssertState(await rider.PostAsJsonAsync($"/trips/{id}/confirm",
+            new { accept = true, paymentMethod = "CARD", cardToken = "test-card-approved" }), "DriverOffered");
+        await AssertState(await driver.PostAsync($"/trips/{id}/driver-accept", null), "DriverAccepted");
+        await AssertState(await driver.PostAsync($"/trips/{id}/en-route", null), "EnRoute");
+        await AssertState(await driver.PostAsync($"/trips/{id}/pickup", null), "PickedUp");
+        await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "PaymentPending");
+
+        var completed = Assert.Single(app.Store.Events.OfType<SwiftRide.Contracts.Events.RideCompleted>());
+        Assert.Equal(ContractPaymentMethod.CARD, completed.PaymentMethod);
+        Assert.Equal("test-card-approved", completed.CardToken);
+    }
+
+    [Fact]
     public async Task FullJourney_CreateConfirmAcceptEnRoutePickupDropoff()
     {
         using var app = new TripApiFactory();
@@ -267,7 +286,8 @@ public class TripApiFlowTests
             app.Matching.Setup(c => c.MatchAsync(It.IsAny<MatchDriverRequest>())).ReturnsAsync((MatchDriverResult?)null);
         var id = await Create(rider);
         if (stage == "confirm")
-            await AssertState(await rider.PostAsJsonAsync($"/trips/{id}/confirm", new { accept = true, paymentMethod = "CARD" }), "Failed");
+            await AssertState(await rider.PostAsJsonAsync($"/trips/{id}/confirm",
+                new { accept = true, paymentMethod = "CARD", cardToken = "test-card-approved" }), "Failed");
         Assert.Equal(TripStatus.Failed, app.Store.Committed[id].Status);
         Assert.Equal(HttpStatusCode.NoContent, (await rider.GetAsync("/trips/me/current")).StatusCode);
     }

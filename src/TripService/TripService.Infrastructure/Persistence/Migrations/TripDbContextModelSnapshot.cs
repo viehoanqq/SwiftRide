@@ -106,6 +106,11 @@ namespace TripService.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("TripId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("CardToken")
+                        .HasMaxLength(100)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(100)");
+
                     b.Property<double>("DistanceKm")
                         .HasColumnType("float");
 

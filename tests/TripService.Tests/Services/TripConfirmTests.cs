@@ -92,7 +92,8 @@ public class TripConfirmTests
 
         _mockTripRepo.Setup(r => r.GetByIdAsync(tripId)).ReturnsAsync(trip);
 
-        var request = new ConfirmTripRequest(Accept: true, PaymentMethod: paymentMethodInput);
+        var token = expectedMethod == PaymentMethod.Card ? "test-card-approved" : null;
+        var request = new ConfirmTripRequest(Accept: true, PaymentMethod: paymentMethodInput, CardToken: token);
 
         // Act
         var response = await _service.ConfirmAsync(tripId, riderId, request);
@@ -103,6 +104,7 @@ public class TripConfirmTests
         Assert.NotNull(trip.Fare);
         Assert.Equal(FareStatus.Accepted, trip.Fare.Status);
         Assert.Equal(expectedMethod, trip.Fare.PaymentMethod);
+        Assert.Equal(token, trip.Fare.CardToken);
         Assert.NotNull(trip.Fare.RespondedAt);
         var offer = Assert.Single(trip.Offers);
         Assert.Equal(1, offer.AttemptNo);
@@ -119,6 +121,22 @@ public class TripConfirmTests
             match.PickupLat == 10.7725 &&
             match.PickupLng == 10.6980)), Times.Once);
         _mockTripRepo.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task ConfirmAsync_RejectsMissingCardTokenAndWalletToken()
+    {
+        var riderId = Guid.NewGuid();
+        var trip = CreateSampleQuotedTrip(riderId);
+        _mockTripRepo.Setup(r => r.GetByIdAsync(trip.Id)).ReturnsAsync(trip);
+
+        await Assert.ThrowsAsync<ValidationException>(() => _service.ConfirmAsync(
+            trip.Id, riderId, new ConfirmTripRequest(true, "CARD")));
+        await Assert.ThrowsAsync<ValidationException>(() => _service.ConfirmAsync(
+            trip.Id, riderId, new ConfirmTripRequest(true, "WALLET", "test-card-approved")));
+
+        Assert.Equal(TripStatus.Quoted, trip.Status);
+        _mockTripRepo.Verify(r => r.SaveChangesAsync(), Times.Never);
     }
 
     [Fact]

@@ -13,6 +13,9 @@ builder.Services.AddOptions<PaymentOptions>()
     .Bind(builder.Configuration.GetRequiredSection(PaymentOptions.SectionName))
     .Validate(options => options.DriverRate >= 0 && options.DriverRate <= 1,
         "Payment:DriverRate is required and must be between 0 and 1.")
+    .Validate(options => !options.FakeCard.Enabled || builder.Environment.IsDevelopment() ||
+        builder.Environment.IsEnvironment("Testing"),
+        "Payment:FakeCard:Enabled is allowed only in Development or Testing.")
     .ValidateOnStart();
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<PaymentOptions>>().Value);
 

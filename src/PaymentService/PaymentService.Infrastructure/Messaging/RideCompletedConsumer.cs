@@ -32,6 +32,17 @@ public sealed class RideCompletedConsumer(
             if (await db.ProcessedMessages.AnyAsync(m => m.MessageId == ride.EventId, ct))
                 return 0;
 
+            if (result.Response.Status == PaymentState.PENDING)
+            {
+                // Unknown card outcome: commit the pending payment and checkpoint, without a final event.
+                db.ProcessedMessages.Add(new ProcessedMessage
+                {
+                    MessageId = ride.EventId,
+                    ProcessedAt = DateTime.UtcNow
+                });
+                return 0;
+            }
+
             IIntegrationEvent outcome = result.Response.Status switch
             {
                 PaymentState.SUCCEEDED or PaymentState.REFUNDED => new PaymentSettled(

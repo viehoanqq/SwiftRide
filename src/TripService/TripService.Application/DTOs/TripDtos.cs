@@ -13,7 +13,7 @@ public record CreateTripResponse(
     decimal? Price, double? DistanceKm, double? DurationMin, string? Strategy);   // null khi Failed
 
 // ----- POST /trips/{id}/confirm
-public record ConfirmTripRequest(bool Accept, string? PaymentMethod);   // "WALLET" | "CARD", bắt buộc khi Accept = true
+public record ConfirmTripRequest(bool Accept, string? PaymentMethod, string? CardToken = null);   // CARD requires a test token
 public record ConfirmTripResponse(string Status);
 
 /// <summary>Thông tin một lời mời chuyến hiển thị cho tài xế.</summary>
