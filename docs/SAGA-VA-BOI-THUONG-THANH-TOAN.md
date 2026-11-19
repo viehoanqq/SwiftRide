@@ -71,6 +71,29 @@ Các chuyển trạng thái hợp lệ: `Paid → RefundPending → Refunded`; t
 
 Khi Trip ở `RefundPending`, API đọc chuyến cần trả trạng thái đó cùng thông tin thanh toán đủ để UI hiển thị “đang hoàn”, **không trả `CardToken`**. Chỉ hiển thị “đã hoàn” sau khi Payment commit refund và Trip nhận xác nhận. Các trường hợp chờ lâu cần hiển thị mã tham chiếu `TripId`/`PaymentId` để hỗ trợ tra cứu; không hứa thời gian hoàn tiền khi chưa có SLA được cấu hình.
 
+### Bảng chuyển trạng thái Payment Saga
+
+Quy tắc thuần đã được định nghĩa trong `TripService.Application/Sagas/PaymentSagaTransitions.cs`. **Chưa có Saga persistence, consumer hay scheduler gọi quy tắc này.** `Completed` nghĩa là Trip đã ghi `Paid` cùng history/outbox, không đợi Matching giải phóng tài xế. `Failed` chỉ dùng khi Payment xác nhận chưa thu được tiền. `NeedsAttention` giữ nguyên trạng thái Trip đã biết và thêm cờ cần đối soát; nó không tự biến khoản thu thành thất bại.
+
+| Saga hiện tại | Tín hiệu | Saga tiếp theo | Điều kiện và thao tác cần lưu cùng transaction |
+| --- | --- | --- | --- |
+| `AwaitingPayment` | `PaymentSettled` | `Completed` | Đối chiếu Trip/Payment/EventId; ghi Trip `Paid`, history, `TripClosed`, checkpoint. |
+| `AwaitingPayment` | `PaymentDeclined` | `Failed` | Payment xác nhận `FAILED`; ghi Trip `PaymentFailed`, history, `TripClosed`, checkpoint. |
+| `AwaitingPayment` | `PaymentOutcomeUnknown` | `PaymentUncertain` | Timeout hoặc Card `Unknown`; tra Payment theo `TripId`, chưa kết luận thất bại. |
+| `PaymentUncertain` | `PaymentStillPending` hoặc `PaymentOutcomeUnknown` | `PaymentUncertain` | Giữ yêu cầu gốc, lên lịch đối soát lại; không tạo payment key mới. |
+| `PaymentUncertain` | `PaymentSettled`/`VerifiedPaymentSettled` | `Completed` | Kết quả đến muộn hoặc đối soát xác nhận đã charge; ghi Trip `Paid`. |
+| `PaymentUncertain` | `PaymentDeclined`/`VerifiedPaymentDeclined` | `Failed` | Chỉ khi xác nhận không có charge; ghi Trip `PaymentFailed`. |
+| `AwaitingPayment`/`PaymentUncertain` | `ManualReviewRequired` | `NeedsAttention` | Sai TripId, PaymentId, amount hoặc không thể đối soát; không refund tự động. |
+| `Completed` | `ApprovedRefundForVerifiedCharge` | `Compensating` | Quyết định refund được duyệt, Payment còn `SUCCEEDED`; ghi Trip `RefundPending` và `RefundPayment` outbox. |
+| `PaymentUncertain`/`NeedsAttention` | `ApprovedRefundForVerifiedCharge` | `Compensating` | Đã xác minh charge thật và quyết định refund; ghi Trip `RefundPending` và command cùng key cố định. |
+| `Compensating` | `PaymentRefunded` | `Compensated` | Đối chiếu refund; ghi Trip `Refunded`, history và checkpoint. |
+| `Compensating` | `RefundOutcomeUnknown` | `Compensating` | Timeout/lỗi kết nối: tra Payment/refund receipt trước khi retry. |
+| `Compensating` | `RefundRejected` hoặc `ManualReviewRequired` | `NeedsAttention` | Kết quả từ chối xác định; giữ thông tin đã thu, không báo khách đã hoàn. |
+| `NeedsAttention` | `VerifiedPaymentSettled`/`VerifiedPaymentDeclined` | `Completed`/`Failed` | Người có quyền đối soát và ghi kết luận; đồng bộ Trip với kết quả xác minh. |
+| `Completed`/`Failed`/`Compensated` | Timeout cũ | Giữ nguyên | Chỉ bỏ qua sau khi kiểm tra timeout thuộc đúng command gốc. |
+
+Các cặp trạng thái/tín hiệu không có trong bảng bị từ chối. Consumer xử lý duplicate cùng `EventId` và payload bằng checkpoint **trước** khi gọi bảng chuyển trạng thái; `EventId` trùng payload khác là lỗi. `ApprovedRefundForVerifiedCharge` chỉ được phát sau khi application đã xác minh Payment `SUCCEEDED`, đúng Trip/amount và có quyết định được duyệt. Bảng thuần không truy vấn DB hoặc tự phê duyệt refund.
+
 ## 4. Hợp đồng message cần thêm — Cần triển khai
 
 Luồng runtime hiện tại có bảy integration event. Các record Payment Saga `ProcessPayment`, `ProcessPaymentTimedOut`, `RefundPayment`, `PaymentRefunded`, `PaymentRefundFailed` đã được khai báo ở `SwiftRide.Contracts.Events`, nhưng **chưa có publisher/consumer sử dụng chúng**. `PaymentRefunded` dùng queue dự kiến `trip.payment-refunded`:
