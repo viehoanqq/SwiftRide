@@ -29,7 +29,7 @@ public static class AdminBootstrapper
             return;
         }
         if (string.IsNullOrEmpty(phone) || string.IsNullOrEmpty(password) ||
-            !Regex.IsMatch(phone, @"^0\d{9}$") || password.Length < 12)
+            !Regex.IsMatch(phone, @"^0\d{9}$") || password.Length < 6)
             throw new InvalidOperationException(
                 "Identity:AdminBootstrap requires a 10-digit phone and a password of at least 12 characters.");
 

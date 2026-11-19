@@ -9,8 +9,10 @@ namespace IdentityService.Infrastructure.Persistence.Migrations;
 public sealed class AddAdminRoleForRefundApproval : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder) =>
-        migrationBuilder.InsertData("Roles", new[] { "Id", "Name" }, new object[] { 3, "Admin" });
+        migrationBuilder.InsertData(
+            table: "Roles", columns: new[] { "Id", "Name" },
+            columnTypes: new[] { "int", "nvarchar(20)" }, values: new object[] { 3, "Admin" });
 
     protected override void Down(MigrationBuilder migrationBuilder) =>
-        migrationBuilder.DeleteData("Roles", "Id", 3);
+        migrationBuilder.DeleteData(table: "Roles", keyColumn: "Id", keyColumnType: "int", keyValue: 3);
 }
