@@ -43,8 +43,11 @@ public static class DependencyInjection
             {
                 bus.AddConsumer<UserRegisteredConsumer>()
                     .Endpoint(endpoint => endpoint.Name = QueueNames.PaymentUserRegistered);
+                // Keep the current dropoff path until Trip starts publishing ProcessPayment.
                 bus.AddConsumer<RideCompletedConsumer>()
                     .Endpoint(endpoint => endpoint.Name = QueueNames.PaymentRideCompleted);
+                bus.AddConsumer<ProcessPaymentConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.PaymentProcessPayment);
             });
         if (environment?.IsEnvironment("Testing") != true)
             services.AddHostedService<PaymentOutboxPublisher>();

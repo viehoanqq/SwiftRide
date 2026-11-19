@@ -25,11 +25,20 @@ public sealed class RideCompletedConsumer(
             ride.TripId, ride.RiderId, ride.DriverId, ride.Amount,
             ride.PaymentMethod, PaymentProtocol.TripPaymentKey(ride.TripId), ride.CardToken);
 
-        return unitOfWork.ExecuteAsync(async ct =>
+        return PaymentCommandProcessor.HandleAsync(checkout, unitOfWork, db,
+            request, ride.EventId, ride.CorrelationId, context.CancellationToken);
+    }
+}
+
+internal static class PaymentCommandProcessor
+{
+    public static Task<int> HandleAsync(PaymentCheckoutService checkout, IUnitOfWork unitOfWork,
+        PayDbContext db, CreatePaymentRequest request, Guid messageId, Guid correlationId,
+        CancellationToken cancellationToken) => unitOfWork.ExecuteAsync(async ct =>
         {
             // Checkout takes advisory locks for both the payment key and TripId.
             var result = await checkout.CreateInsideTransactionAsync(request, ct);
-            if (await db.ProcessedMessages.AnyAsync(m => m.MessageId == ride.EventId, ct))
+            if (await db.ProcessedMessages.AnyAsync(m => m.MessageId == messageId, ct))
                 return 0;
 
             if (result.Response.Status == PaymentState.PENDING)
@@ -37,7 +46,7 @@ public sealed class RideCompletedConsumer(
                 // Unknown card outcome: commit the pending payment and checkpoint, without a final event.
                 db.ProcessedMessages.Add(new ProcessedMessage
                 {
-                    MessageId = ride.EventId,
+                    MessageId = messageId,
                     ProcessedAt = DateTime.UtcNow
                 });
                 return 0;
@@ -46,11 +55,11 @@ public sealed class RideCompletedConsumer(
             IIntegrationEvent outcome = result.Response.Status switch
             {
                 PaymentState.SUCCEEDED or PaymentState.REFUNDED => new PaymentSettled(
-                    Guid.NewGuid(), ride.CorrelationId, ride.EventId, DateTime.UtcNow,
-                    ride.TripId, result.Response.PaymentId, ride.Amount),
+                    Guid.NewGuid(), correlationId, messageId, DateTime.UtcNow,
+                    request.TripId, result.Response.PaymentId, request.Amount),
                 PaymentState.FAILED => new PaymentFailed(
-                    Guid.NewGuid(), ride.CorrelationId, ride.EventId, DateTime.UtcNow,
-                    ride.TripId, result.Response.PaymentId,
+                    Guid.NewGuid(), correlationId, messageId, DateTime.UtcNow,
+                    request.TripId, result.Response.PaymentId,
                     (db.Payments.Local.FirstOrDefault(p => p.Id == result.Response.PaymentId)
                         ?? await db.Payments.SingleAsync(p => p.Id == result.Response.PaymentId, ct)).FailureReason
                         ?? throw new InvalidOperationException("Failed payment has no reason.")),
@@ -59,7 +68,7 @@ public sealed class RideCompletedConsumer(
 
             db.ProcessedMessages.Add(new ProcessedMessage
             {
-                MessageId = ride.EventId,
+                MessageId = messageId,
                 ProcessedAt = DateTime.UtcNow
             });
             db.OutboxMessages.Add(new OutboxMessage
@@ -71,6 +80,5 @@ public sealed class RideCompletedConsumer(
                 OccurredAt = outcome.OccurredAt
             });
             return 0;
-        }, context.CancellationToken);
-    }
+        }, cancellationToken);
 }

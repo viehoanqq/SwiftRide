@@ -23,6 +23,52 @@ public class RideCompletedConsumerTests
     private static readonly Guid LowBalanceRiderId = Guid.Parse("11111111-0000-0000-0000-000000000002");
 
     [PostgresFact]
+    public async Task ProcessPayment_ReplayKeepsOneChargeAndOneResultWithCommandCausation()
+    {
+        await using var database = await PaymentConsumerDatabase.CreateAsync();
+        var tripId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        var command = new ProcessPayment(Guid.NewGuid(), tripId, null, now,
+            tripId, FundedRiderId, DriverId, 50_000m, PaymentMethod.WALLET,
+            PaymentProtocol.TripPaymentKey(tripId), now.AddMinutes(2));
+
+        await DeliverCommand(database, command);
+        await DeliverCommand(database, command);
+
+        await using var verify = database.Context();
+        var payment = Assert.Single(await verify.Payments.ToListAsync());
+        Assert.Equal(PaymentStatus.Succeeded, payment.Status);
+        Assert.Equal(3, await verify.LedgerEntries.CountAsync());
+        Assert.Single(await verify.ProcessedMessages.ToListAsync());
+        var outcome = JsonSerializer.Deserialize<PaymentSettled>(
+            Assert.Single(await verify.OutboxMessages.ToListAsync()).Payload)!;
+        Assert.Equal(command.EventId, outcome.CausationId);
+        Assert.Equal(payment.Id, outcome.PaymentId);
+    }
+
+    [PostgresFact]
+    public async Task ProcessPayment_InsufficientFundsPreservesFailureAndCheckpoint()
+    {
+        await using var database = await PaymentConsumerDatabase.CreateAsync();
+        var tripId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        var command = new ProcessPayment(Guid.NewGuid(), tripId, null, now,
+            tripId, LowBalanceRiderId, DriverId, 50_000m, PaymentMethod.WALLET,
+            PaymentProtocol.TripPaymentKey(tripId), now.AddMinutes(2));
+
+        await DeliverCommand(database, command);
+
+        await using var verify = database.Context();
+        Assert.Equal(PaymentStatus.Failed, Assert.Single(await verify.Payments.ToListAsync()).Status);
+        Assert.Empty(await verify.LedgerEntries.ToListAsync());
+        Assert.Single(await verify.ProcessedMessages.ToListAsync());
+        var outcome = JsonSerializer.Deserialize<PaymentFailed>(
+            Assert.Single(await verify.OutboxMessages.ToListAsync()).Payload)!;
+        Assert.Equal("INSUFFICIENT_FUNDS", outcome.Reason);
+        Assert.Equal(command.EventId, outcome.CausationId);
+    }
+
+    [PostgresFact]
     public async Task SuccessfulRide_CommitsSettlementCheckpointAndOutcome_AndReplayDoesNotChargeAgain()
     {
         await using var database = await PaymentConsumerDatabase.CreateAsync();
@@ -136,6 +182,19 @@ public class RideCompletedConsumerTests
         var consumer = new RideCompletedConsumer(checkout, uow, db);
         var context = new Mock<ConsumeContext<RideCompleted>>();
         context.SetupGet(c => c.Message).Returns(ride);
+        context.SetupGet(c => c.CancellationToken).Returns(CancellationToken.None);
+        await consumer.Consume(context.Object);
+    }
+
+    private static async Task DeliverCommand(PaymentConsumerDatabase database, ProcessPayment command)
+    {
+        await using var db = database.Context();
+        var uow = new UnitOfWork(db);
+        var checkout = new PaymentCheckoutService(new PaymentRepository(db), new AccountRepository(db), uow,
+            new PaymentOptions { DriverRate = 0.8m });
+        var consumer = new ProcessPaymentConsumer(checkout, uow, db);
+        var context = new Mock<ConsumeContext<ProcessPayment>>();
+        context.SetupGet(c => c.Message).Returns(command);
         context.SetupGet(c => c.CancellationToken).Returns(CancellationToken.None);
         await consumer.Consume(context.Object);
     }

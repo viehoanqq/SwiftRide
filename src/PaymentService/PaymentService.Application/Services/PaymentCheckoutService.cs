@@ -16,7 +16,7 @@ public sealed class PaymentCheckoutService(
     public Task<PaymentCreationResult> CreateAsync(CreatePaymentRequest request, CancellationToken cancellationToken) =>
         unitOfWork.ExecuteAsync(ct => CreateInsideTransactionAsync(request, ct), cancellationToken);
 
-    // Used by RideCompletedConsumer inside its transaction, so checkout and event bookkeeping commit together.
+    // Used by Payment consumers inside their transaction, so checkout and event bookkeeping commit together.
     public async Task<PaymentCreationResult> CreateInsideTransactionAsync(
         CreatePaymentRequest request, CancellationToken cancellationToken)
     {
