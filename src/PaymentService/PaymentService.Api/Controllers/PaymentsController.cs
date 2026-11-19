@@ -54,4 +54,13 @@ public sealed class PaymentsController(IPaymentAppService payments) : Controller
             : await payments.GetByTripAsync(tripId, User.GetUserId(), User.FindFirst("role")!.Value, cancellationToken);
         return result is null ? NotFound(new { code = PaymentErrorCodes.PaymentNotFound, message = "Payment not found." }) : Ok(result);
     }
+
+    [HttpGet("refunds/by-key/{key}")]
+    [Authorize(Policy = PaymentProtocol.ReadInternalPolicy)]
+    [ProducesResponseType(typeof(RefundReceiptStatusResponse), 200)]
+    public async Task<IActionResult> RefundByKey(string key, CancellationToken cancellationToken)
+    {
+        var receipt = await payments.FindRefundByKeyInternalAsync(key, cancellationToken);
+        return receipt is null ? NotFound() : Ok(receipt);
+    }
 }

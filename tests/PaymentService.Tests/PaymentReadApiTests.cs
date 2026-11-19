@@ -22,6 +22,26 @@ namespace PaymentService.Tests;
 public class PaymentReadApiTests
 {
     [Theory]
+    [InlineData("service-read", HttpStatusCode.OK)]
+    [InlineData("service-refund", HttpStatusCode.Forbidden)]
+    [InlineData("Rider", HttpStatusCode.Forbidden)]
+    public async Task RefundReceiptLookup_RequiresInternalReadScope(string identity,
+        HttpStatusCode expected)
+    {
+        using var app = new PaymentReadFactory();
+        app.Payments.Setup(p => p.FindRefundByKeyInternalAsync("refund-key",
+            It.IsAny<CancellationToken>())).ReturnsAsync(new RefundReceiptStatusResponse(
+            app.PaymentId, "APPROVED_CUSTOMER_REFUND", PaymentState.REFUNDED));
+        using var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", app.Token(identity));
+        using var response = await client.GetAsync("/payments/refunds/by-key/refund-key");
+        Assert.Equal(expected, response.StatusCode);
+        if (expected == HttpStatusCode.OK)
+            Assert.Equal(app.PaymentId,
+                (await response.Content.ReadFromJsonAsync<RefundReceiptStatusResponse>())!.PaymentId);
+    }
+
+    [Theory]
     [InlineData("identity-wallet", "Driver", 204)]
     [InlineData("identity-wallet", "Rider", 204)]
     [InlineData("identity-wallet", "Platform", 400)]
@@ -146,7 +166,12 @@ internal sealed class PaymentReadFactory : WebApplicationFactory<Program>
         var claims = identity == "identity-wallet"
             ? new[] { new Claim("sub", WalletRegistrationProtocol.Subject), new Claim("scope", WalletRegistrationProtocol.Scope) }
             : identity.StartsWith("service-")
-            ? new[] { new Claim("sub", PaymentProtocol.ServiceSubject), new Claim("scope", identity == "service-refund" ? PaymentProtocol.RefundScope : PaymentProtocol.CreateScope) }
+            ? new[] { new Claim("sub", PaymentProtocol.ServiceSubject), new Claim("scope", identity switch
+                {
+                    "service-refund" => PaymentProtocol.RefundScope,
+                    "service-read" => PaymentProtocol.ReadScope,
+                    _ => PaymentProtocol.CreateScope
+                }) }
             : new[] { new Claim("sub", UserId.ToString()), new Claim("role", identity) };
         return new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken("payment-tests", "payment-tests", claims,
             expires: DateTime.UtcNow.AddMinutes(5), signingCredentials: new SigningCredentials(

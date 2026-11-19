@@ -13,4 +13,6 @@ public interface IPaymentAppService
     Task<PaymentDetailResponse?> FindByTripInternalAsync(Guid tripId, CancellationToken cancellationToken);
     Task<RefundPaymentResponse> RefundAsync(Guid paymentId, RefundPaymentRequest request,
         string idempotencyKey, CancellationToken cancellationToken);
+    Task<RefundReceiptStatusResponse?> FindRefundByKeyInternalAsync(string idempotencyKey,
+        CancellationToken cancellationToken);
 }

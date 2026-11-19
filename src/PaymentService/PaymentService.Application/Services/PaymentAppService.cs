@@ -6,7 +6,7 @@ using SwiftRide.Contracts.Payments;
 namespace PaymentService.Application.Services;
 
 public sealed class PaymentAppService(IPaymentCheckoutService checkout, IPaymentRepository payments,
-    IRefundAppService refunds) : IPaymentAppService
+    IRefundAppService refunds, IRefundRepository? refundReceipts = null) : IPaymentAppService
 {
     public Task<PaymentCreationResult> CreateAsync(CreatePaymentRequest request, CancellationToken cancellationToken)
         => checkout.CreateAsync(request, cancellationToken);
@@ -34,4 +34,16 @@ public sealed class PaymentAppService(IPaymentCheckoutService checkout, IPayment
     public Task<RefundPaymentResponse> RefundAsync(Guid paymentId, RefundPaymentRequest request,
         string idempotencyKey, CancellationToken cancellationToken)
         => refunds.RefundAsync(paymentId, request, idempotencyKey, cancellationToken);
+
+    public async Task<RefundReceiptStatusResponse?> FindRefundByKeyInternalAsync(string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 100)
+            throw new ValidationException("Refund key is invalid.");
+        var receipt = await (refundReceipts ?? throw new InvalidOperationException(
+            "Refund repository is not configured.")).GetByIdempotencyKeyAsync(
+            idempotencyKey, cancellationToken);
+        return receipt is null ? null : new RefundReceiptStatusResponse(
+            receipt.PaymentId, receipt.Reason, receipt.Response.Status);
+    }
 }

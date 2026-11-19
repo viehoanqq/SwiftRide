@@ -5,6 +5,7 @@ using Moq;
 using PaymentService.Application.DTOs;
 using PaymentService.Application.Options;
 using PaymentService.Application.Services;
+using PaymentService.Application.Interfaces;
 using PaymentService.Domain.Enums;
 using PaymentService.Infrastructure.Messaging;
 using PaymentService.Infrastructure.Repositories;
@@ -34,6 +35,16 @@ public sealed class RefundPaymentConsumerTests
         Assert.All(payment.Entries.GroupBy(e => e.AccountId), entries =>
             Assert.Equal(0m, entries.Sum(e => e.Amount)));
         Assert.Single(await verify.RefundReceipts.ToListAsync());
+        var receipt = await new RefundRepository(verify).GetByIdempotencyKeyAsync(
+            command.IdempotencyKey, CancellationToken.None);
+        Assert.Equal(command.PaymentId, receipt!.PaymentId);
+        Assert.Equal(command.ReasonCode, receipt.Reason);
+        var lookup = await new PaymentAppService(Mock.Of<IPaymentCheckoutService>(),
+            Mock.Of<IPaymentRepository>(), Mock.Of<IRefundAppService>(),
+            new RefundRepository(verify)).FindRefundByKeyInternalAsync(
+            command.IdempotencyKey, CancellationToken.None);
+        Assert.Equal(command.PaymentId, lookup!.PaymentId);
+        Assert.Equal(PaymentState.REFUNDED, lookup.Status);
         Assert.Single(await verify.ProcessedMessages.ToListAsync());
         var outcome = JsonSerializer.Deserialize<PaymentRefunded>(
             Assert.Single(await verify.OutboxMessages.ToListAsync()).Payload)!;

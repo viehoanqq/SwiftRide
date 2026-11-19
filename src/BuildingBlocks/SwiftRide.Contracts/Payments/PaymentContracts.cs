@@ -24,6 +24,7 @@ public sealed record PaymentDetailResponse(
 
 public sealed record RefundPaymentRequest(string Reason);
 public sealed record RefundPaymentResponse(PaymentState Status);
+public sealed record RefundReceiptStatusResponse(Guid PaymentId, string ReasonCode, PaymentState Status);
 
 public static class PaymentProtocol
 {
