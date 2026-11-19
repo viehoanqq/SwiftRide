@@ -244,16 +244,13 @@
                 "exec": [
                   "const url = pm.variables.replaceIn('{{gatewayUrl}}/trips/{{tripId}}');",
                   "const token = pm.environment.get('riderToken');",
-                  "function waitForOutcome(attempt) {",
-                  "  pm.sendRequest({ url, method: 'GET', header: { Authorization: 'Bearer ' + token } }, (error, response) => {",
-                  "    if (error || !response || response.code !== 200) { console.warn('Không đọc được kết quả:', error || (response && response.code)); return; }",
-                  "    const status = response.json().status;",
-                  "    if (status === 'Refunded' || status === 'RefundNeedsAttention') { console.log('Trip refund status:', status); return; }",
-                  "    if (attempt < 30) { setTimeout(() => waitForOutcome(attempt + 1), 2000); return; }",
-                  "    console.warn('Refund vẫn đang xử lý sau khoảng 60 giây:', status);",
-                  "  });",
-                  "}",
-                  "waitForOutcome(1);"
+                  "for (let attempt = 1; attempt <= 30; attempt++) {",
+                  "  const response = await pm.sendRequest({ url, method: 'GET', header: { Authorization: 'Bearer ' + token } });",
+                  "  if (response.code !== 200) { console.warn('Refund lookup trả', response.code); break; }",
+                  "  const status = response.json().status;",
+                  "  if (status === 'Refunded' || status === 'RefundNeedsAttention') { console.log('Refund:', status, 'lần', attempt); break; }",
+                  "  if (attempt < 30) await new Promise(resolve => setTimeout(resolve, 2000));",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -264,7 +261,8 @@
                 "exec": [
                   "pm.test('Xem chuyến (200)', () => pm.response.to.have.status(200));",
                   "if (pm.response.code === 200) console.log('Refund trip status:', pm.response.json().status, '— poll đến Refunded hoặc RefundNeedsAttention');",
-                  "if (pm.response.code === 200) pm.test('Trip đã hoàn tiền', () => pm.expect(pm.response.json().status).to.eql('Refunded'));"
+                  "if (pm.response.code === 200) pm.test('Trip đã hoàn tiền', () => pm.expect(pm.response.json().status).to.eql('Refunded'));",
+                  "if (pm.response.code !== 200 || pm.response.json().status !== 'Refunded') pm.execution.setNextRequest(null);"
                 ],
                 "type": "text/javascript"
               }
@@ -307,16 +305,13 @@
                 "exec": [
                   "const url = pm.variables.replaceIn('{{gatewayUrl}}/payments/by-trip/{{tripId}}');",
                   "const token = pm.environment.get('riderToken');",
-                  "function waitForOutcome(attempt) {",
-                  "  pm.sendRequest({ url, method: 'GET', header: { Authorization: 'Bearer ' + token } }, (error, response) => {",
-                  "    if (error || !response || response.code !== 200) { console.warn('Không đọc được kết quả:', error || (response && response.code)); return; }",
-                  "    const status = response.json().status;",
-                  "    if (status === 'REFUNDED' || status === 'RefundNeedsAttention') { console.log('Payment refund status:', status); return; }",
-                  "    if (attempt < 30) { setTimeout(() => waitForOutcome(attempt + 1), 2000); return; }",
-                  "    console.warn('Refund vẫn đang xử lý sau khoảng 60 giây:', status);",
-                  "  });",
-                  "}",
-                  "waitForOutcome(1);"
+                  "for (let attempt = 1; attempt <= 30; attempt++) {",
+                  "  const response = await pm.sendRequest({ url, method: 'GET', header: { Authorization: 'Bearer ' + token } });",
+                  "  if (response.code !== 200) { console.warn('Refund lookup trả', response.code); break; }",
+                  "  const status = response.json().status;",
+                  "  if (status === 'REFUNDED' || status === 'RefundNeedsAttention') { console.log('Refund:', status, 'lần', attempt); break; }",
+                  "  if (attempt < 30) await new Promise(resolve => setTimeout(resolve, 2000));",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -327,7 +322,8 @@
                 "exec": [
                   "pm.test('Xem payment (200)', () => pm.response.to.have.status(200));",
                   "if (pm.response.code === 200) console.log('Refund payment status:', pm.response.json().status, '— poll đến REFUNDED');",
-                  "if (pm.response.code === 200) pm.test('Payment đã hoàn tiền', () => pm.expect(pm.response.json().status).to.eql('REFUNDED'));"
+                  "if (pm.response.code === 200) pm.test('Payment đã hoàn tiền', () => pm.expect(pm.response.json().status).to.eql('REFUNDED'));",
+                  "if (pm.response.code !== 200 || pm.response.json().status !== 'REFUNDED') pm.execution.setNextRequest(null);"
                 ],
                 "type": "text/javascript"
               }

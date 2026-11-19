@@ -48,7 +48,7 @@
       "name": "01. Auth & Onboarding (Identity Service)",
       "item": [
         {
-          "name": "1.1 Login Rider (Nguyễn Văn An - Ví 500k)",
+          "name": "1.1 Login Rider (configured account)",
           "event": [
             {
               "listen": "test",
@@ -83,7 +83,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{riderPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{cardRiderPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
             },
             "url": {
               "raw": "{{gatewayUrl}}/auth/login",
@@ -144,7 +144,7 @@
           "response": []
         },
         {
-          "name": "1.3 Login Driver (Lê Văn Cường - Chợ Bến Thành)",
+          "name": "1.3 Login Driver (configured account)",
           "event": [
             {
               "listen": "test",
@@ -179,7 +179,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{driverPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{cardDriverPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
             },
             "url": {
               "raw": "{{gatewayUrl}}/auth/login",
@@ -251,11 +251,15 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Tài xế bật Online thành công (200 OK)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.status).to.eql('Available');",
-                  "});"
+                  "pm.test('Driver sẵn sàng nhận chuyến (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const status = pm.response.json().status;",
+                  "  pm.test('Driver Available', () => pm.expect(status).to.eql('Available'));",
+                  "  if (status !== 'Available') pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  console.warn('Driver đang bận hoặc API lỗi:', pm.response.text());",
+                  "  pm.execution.setNextRequest(null);",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -304,11 +308,15 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Trạng thái hiện tại của tài xế là Available', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.status).to.eql('Available');",
-                  "});"
+                  "pm.test('Driver sẵn sàng nhận chuyến (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const status = pm.response.json().status;",
+                  "  pm.test('Driver Available', () => pm.expect(status).to.eql('Available'));",
+                  "  if (status !== 'Available') pm.execution.setNextRequest(null);",
+                  "} else {",
+                  "  console.warn('Driver đang bận hoặc API lỗi:', pm.response.text());",
+                  "  pm.execution.setNextRequest(null);",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -396,24 +404,19 @@
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
-                  "pm.environment.unset('paymentId'); pm.environment.unset('tripPollAttempts'); pm.environment.unset('paymentPollAttempts');",
-                  "pm.test('Tạo chuyến đi và nhận báo giá thành công (201 Created)', function () {",
-                  "    pm.response.to.have.status(201);",
-                  "});",
-                  "",
-                  "const res = pm.response.json();",
-                  "if (res && res.tripId) {",
-                  "    pm.environment.set('tripId', res.tripId);",
-                  "    console.log('Đã lưu tripId:', res.tripId, 'Giá cước:', res.price);",
-                  "}",
-                  "",
-                  "pm.test('Trạng thái chuyến đi là Quoted và có giá cước > 0', function () {",
-                  "    pm.expect(res.status).to.eql('Quoted');",
-                  "    pm.expect(res.price).to.be.above(0);",
-                  "});"
-                ],
-                "type": "text/javascript"
+                  "pm.environment.unset('tripId'); pm.environment.unset('offerId'); pm.environment.unset('paymentId');",
+                  "pm.test('Tạo chuyến mới (201)', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code !== 201) { pm.execution.setNextRequest(null); }",
+                  "else {",
+                  "  const trip = pm.response.json();",
+                  "  pm.test('Response có tripId hợp lệ', () => pm.expect(trip.tripId).to.match(/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i));",
+                  "  pm.test('Chuyến Quoted và có giá', () => { pm.expect(trip.status).to.eql('Quoted'); pm.expect(trip.price).to.be.above(0); });",
+                  "  if (trip.tripId) pm.environment.set('tripId', trip.tripId);",
+                  "  else pm.execution.setNextRequest(null);",
+                  "}"
+                ]
               }
             }
           ],
@@ -500,14 +503,35 @@
           "name": "3.4 Rider Confirm Fare Quote & Match Nearest Driver",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tripId = pm.environment.get('tripId');",
+                  "if (!tripId) {",
+                  "  pm.test('Cần tripId từ bước 3.2', () => pm.expect.fail('Chạy toàn bộ collection từ 3.2; không gọi /trips//...'));",
+                  "  pm.execution.setNextRequest(null);",
+                  "  pm.execution.skipRequest();",
+                  "}",
+                  "const token = pm.variables.get('cardToken');",
+                  "if (!['test-card-approved','test-card-declined','test-card-unknown'].includes(token)) {",
+                  "  pm.test('CARD cần test token hợp lệ', () => pm.expect.fail('Đặt cardToken trong environment hoặc collection; không gửi {{cardToken}} nguyên văn'));",
+                  "  pm.execution.setNextRequest(null);",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Xác nhận giá và ghép tài xế thành công (200 OK)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.status).to.eql('DriverOffered');",
-                  "});"
+                  "pm.test('Xác nhận giá và mời Driver (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const result = pm.response.json();",
+                  "  pm.test('Đã có lời mời', () => pm.expect(result.status).to.eql('DriverOffered'));",
+                  "  if (result.status !== 'DriverOffered') pm.execution.setNextRequest(null);",
+                  "} else pm.execution.setNextRequest(null);"
                 ],
                 "type": "text/javascript"
               }
@@ -563,10 +587,16 @@
               "script": {
                 "exec": [
                   "pm.test('Lấy danh sách offer (200)', () => pm.response.to.have.status(200));",
-                  "const offers = pm.response.json();",
-                  "const target = offers.find(o => o.tripId === pm.environment.get('tripId'));",
-                  "pm.test('Driver hiện tại được mời đúng chuyến', () => pm.expect(target, 'Đăng nhập Driver được mời và gọi lại').to.exist);",
-                  "if (target) pm.environment.set('offerId', target.offerId);"
+                  "const tripId = pm.environment.get('tripId');",
+                  "pm.test('Có tripId từ bước 3.2', () => pm.expect(tripId).to.be.ok);",
+                  "if (pm.response.code !== 200 || !tripId) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "  const offers = pm.response.json();",
+                  "  const target = Array.isArray(offers) ? offers.find(o => o.tripId === tripId) : undefined;",
+                  "  pm.test('Driver được mời đúng chuyến', () => pm.expect(target, 'Đăng nhập Driver được mời rồi gọi lại 4.1').to.exist);",
+                  "  if (target) pm.environment.set('offerId', target.offerId);",
+                  "  else pm.execution.setNextRequest(null);",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -603,14 +633,26 @@
           "name": "4.2 Driver Accept Offer (/trips/{id}/driver-accept)",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tripId = pm.environment.get('tripId');",
+                  "if (!tripId) {",
+                  "  pm.test('Cần tripId từ bước 3.2', () => pm.expect.fail('Chạy toàn bộ collection từ 3.2; không gọi /trips//...'));",
+                  "  pm.execution.setNextRequest(null);",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Tài xế nhận chuyến thành công (200 OK -> DriverAccepted)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.status).to.eql('DriverAccepted');",
-                  "});"
+                  "pm.test('Driver nhận chuyến (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.test('Trạng thái DriverAccepted', () => pm.expect(pm.response.json().status).to.eql('DriverAccepted'));",
+                  "else pm.execution.setNextRequest(null);"
                 ],
                 "type": "text/javascript"
               }
@@ -651,12 +693,13 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Lấy chuyến hiện tại của tài xế thành công (200 OK)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.id).to.eql(pm.environment.get('tripId'));",
-                  "    pm.expect(res.status).to.eql('DriverAccepted');",
-                  "});"
+                  "pm.test('Xem chuyến đang chạy (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const trip = pm.response.json();",
+                  "  pm.test('Đúng tripId mới', () => pm.expect(trip.id).to.eql(pm.environment.get('tripId')));",
+                  "  pm.test('Đã nhận chuyến', () => pm.expect(trip.status).to.eql('DriverAccepted'));",
+                  "  if (trip.id !== pm.environment.get('tripId')) pm.execution.setNextRequest(null);",
+                  "} else pm.execution.setNextRequest(null);"
                 ],
                 "type": "text/javascript"
               }
@@ -693,14 +736,26 @@
           "name": "4.4 Driver Mark EnRoute (/trips/{id}/en-route)",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tripId = pm.environment.get('tripId');",
+                  "if (!tripId) {",
+                  "  pm.test('Cần tripId từ bước 3.2', () => pm.expect.fail('Chạy toàn bộ collection từ 3.2; không gọi /trips//...'));",
+                  "  pm.execution.setNextRequest(null);",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Chuyển trạng thái sang EnRoute (200 OK)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.status).to.eql('EnRoute');",
-                  "});"
+                  "pm.test('Chuyển EnRoute (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.test('Trạng thái EnRoute', () => pm.expect(pm.response.json().status).to.eql('EnRoute'));",
+                  "else pm.execution.setNextRequest(null);"
                 ],
                 "type": "text/javascript"
               }
@@ -737,14 +792,26 @@
           "name": "4.5 Driver Mark PickedUp (/trips/{id}/pickup)",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tripId = pm.environment.get('tripId');",
+                  "if (!tripId) {",
+                  "  pm.test('Cần tripId từ bước 3.2', () => pm.expect.fail('Chạy toàn bộ collection từ 3.2; không gọi /trips//...'));",
+                  "  pm.execution.setNextRequest(null);",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Chuyển trạng thái sang PickedUp (200 OK)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.status).to.eql('PickedUp');",
-                  "});"
+                  "pm.test('Chuyển PickedUp (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.test('Trạng thái PickedUp', () => pm.expect(pm.response.json().status).to.eql('PickedUp'));",
+                  "else pm.execution.setNextRequest(null);"
                 ],
                 "type": "text/javascript"
               }
@@ -781,11 +848,26 @@
           "name": "4.6 Driver Mark DroppedOff & Trigger Auto-Payment (/trips/{id}/dropoff)",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const tripId = pm.environment.get('tripId');",
+                  "if (!tripId) {",
+                  "  pm.test('Cần tripId từ bước 3.2', () => pm.expect.fail('Chạy toàn bộ collection từ 3.2; không gọi /trips//...'));",
+                  "  pm.execution.setNextRequest(null);",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Dropoff lưu Payment Saga và lệnh thanh toán (200)', () => pm.response.to.have.status(200));",
-                  "pm.test('Chuyến đang chờ hoặc đã có kết quả', () => pm.expect(['PaymentPending','Paid','PaymentFailed']).to.include(pm.response.json().status));"
+                  "pm.test('Dropoff lưu lệnh thanh toán (200)', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.test('Trạng thái sau dropoff', () => pm.expect(['PaymentPending','Paid','PaymentFailed']).to.include(pm.response.json().status));",
+                  "else pm.execution.setNextRequest(null);"
                 ],
                 "type": "text/javascript"
               }
@@ -831,19 +913,21 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
+                  "if (!pm.environment.get('tripId')) {",
+                  "  pm.test('Cần tripId từ bước 3.2', () => pm.expect.fail('Không chạy bước 5 khi tripId rỗng'));",
+                  "  pm.execution.setNextRequest(null);",
+                  "  pm.execution.skipRequest();",
+                  "}",
                   "const url = pm.variables.replaceIn('{{gatewayUrl}}/trips/{{tripId}}');",
                   "const token = pm.environment.get('riderToken');",
-                  "function waitForTrip(attempt) {",
-                  "  pm.sendRequest({ url, method: 'GET', header: { Authorization: 'Bearer ' + token } }, (error, response) => {",
-                  "    if (error || !response || response.code !== 200) { console.warn('Không đọc được Trip:', error || (response && response.code)); return; }",
-                  "    const status = response.json().status;",
-                  "    const expected = pm.environment.get('expectedTripStatus') || 'Paid';",
-                  "    if (status === expected || status === 'PaymentFailed' || status === 'Paid') { console.log('Trip status:', status, 'expected:', expected); return; }",
-                  "    if (attempt < 30) { setTimeout(() => waitForTrip(attempt + 1), 2000); return; }",
-                  "    console.warn('Trip vẫn', status, 'sau khoảng 60 giây; kiểm tra Saga, trip.payment-settled và _error');",
-                  "  });",
-                  "}",
-                  "waitForTrip(1);"
+                  "const expected = pm.environment.get('expectedTripStatus') || 'Paid';",
+                  "for (let attempt = 1; attempt <= 30; attempt++) {",
+                  "  const response = await pm.sendRequest({ url, method: 'GET', header: { Authorization: 'Bearer ' + token } });",
+                  "  if (response.code !== 200) { console.warn('Trip trả', response.code); break; }",
+                  "  const status = response.json().status;",
+                  "  if (status === expected || status === 'Paid' || status === 'PaymentFailed') { console.log('Trip:', status, 'lần', attempt); break; }",
+                  "  if (attempt < 30) await new Promise(resolve => setTimeout(resolve, 2000));",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -857,6 +941,7 @@
                   "  const trip = pm.response.json();",
                   "  pm.test('Đúng tripId', () => pm.expect(trip.id).to.eql(pm.environment.get('tripId')));",
                   "  pm.test('Trip đúng kết quả CARD', () => pm.expect(trip.status).to.eql(pm.environment.get('expectedTripStatus') || 'Paid'));",
+                  "  if (trip.status !== (pm.environment.get('expectedTripStatus') || 'Paid')) pm.execution.setNextRequest(null);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -896,19 +981,19 @@
               "listen": "prerequest",
               "script": {
                 "exec": [
+                  "if (!pm.environment.get('tripId')) {",
+                  "  pm.test('Cần tripId từ bước 3.2', () => pm.expect.fail('Không chạy bước 5 khi tripId rỗng'));",
+                  "  pm.execution.setNextRequest(null);",
+                  "  pm.execution.skipRequest();",
+                  "}",
                   "const url = pm.variables.replaceIn('{{gatewayUrl}}/payments/by-trip/{{tripId}}');",
                   "const token = pm.environment.get('riderToken');",
-                  "function waitForPayment(attempt) {",
-                  "  pm.sendRequest({ url, method: 'GET', header: { Authorization: 'Bearer ' + token } }, (error, response) => {",
-                  "    if (!error && response && response.code === 200) { console.log('Payment đã sẵn sàng sau', attempt, 'lần kiểm tra'); return; }",
-                  "    if (!error && response && response.code === 404 && attempt < 30) {",
-                  "      setTimeout(() => waitForPayment(attempt + 1), 2000);",
-                  "      return;",
-                  "    }",
-                  "    console.warn('Không thể chờ Payment:', error || (response && response.code), 'lần', attempt);",
-                  "  });",
-                  "}",
-                  "waitForPayment(1);"
+                  "for (let attempt = 1; attempt <= 30; attempt++) {",
+                  "  const response = await pm.sendRequest({ url, method: 'GET', header: { Authorization: 'Bearer ' + token } });",
+                  "  if (response.code === 200) { console.log('Payment có sau', attempt, 'lần'); break; }",
+                  "  if (response.code !== 404) { console.warn('Payment trả', response.code); break; }",
+                  "  if (attempt < 30) await new Promise(resolve => setTimeout(resolve, 2000));",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -924,7 +1009,8 @@
                   "  pm.test('Đúng tripId', () => pm.expect(payment.tripId).to.eql(pm.environment.get('tripId')));",
                   "  console.log('Payment final:', payment.status, 'failureReason:', payment.failureReason, 'paymentId:', payment.id);",
                   "  pm.test('Payment đúng kết quả CARD', () => pm.expect(payment.status, payment.failureReason || '').to.eql(pm.environment.get('expectedPaymentStatus') || 'SUCCEEDED'));",
-                  "}"
+                  "}",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);"
                 ],
                 "type": "text/javascript"
               }
@@ -961,6 +1047,19 @@
         {
           "name": "5.3 Rider Get Payment Details By PaymentId (/payments/{id})",
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('paymentId')) {",
+                  "  pm.test('Cần paymentId từ bước 5.2', () => pm.expect.fail('Payment chưa xuất hiện; kiểm tra bước 5.2'));",
+                  "  pm.execution.setNextRequest(null);",
+                  "  pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
@@ -1139,6 +1238,33 @@
           "response": []
         }
       ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "cardToken",
+      "value": "test-card-approved",
+      "type": "string"
+    },
+    {
+      "key": "expectedTripStatus",
+      "value": "Paid",
+      "type": "string"
+    },
+    {
+      "key": "expectedPaymentStatus",
+      "value": "SUCCEEDED",
+      "type": "string"
+    },
+    {
+      "key": "cardRiderPhone",
+      "value": "0900000002",
+      "type": "string"
+    },
+    {
+      "key": "cardDriverPhone",
+      "value": "0910000002",
+      "type": "string"
     }
   ]
 }

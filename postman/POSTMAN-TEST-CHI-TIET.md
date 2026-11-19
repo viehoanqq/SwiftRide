@@ -8,6 +8,8 @@ Chạy RabbitMQ, SQL Server, PostgreSQL, MongoDB, bốn service và Gateway. Áp
 
 Để cấp Admin thật, đặt `Identity__AdminBootstrap__Phone` và `Identity__AdminBootstrap__Password` (tối thiểu 12 ký tự) trong cấu hình bảo mật của Identity, rồi khởi động lại. Bootstrap tạo tài khoản một lần ở mọi môi trường sau migration; nếu số điện thoại đã thuộc Rider/Driver, startup từ chối nâng quyền. Sau khi tạo, bỏ hai biến bootstrap khỏi cấu hình và khởi động lại; tài khoản Admin đã lưu trong DB. Không commit mật khẩu vào Git. Tài khoản mẫu cũ `0990000000 / 123456`, nếu đã được tạo bởi phiên bản trước, sẽ bị vô hiệu hóa; có thể dùng cùng số điện thoại với mật khẩu bootstrap mới để thay thế. Nhập cùng số điện thoại/mật khẩu vào biến Postman `adminPhone` và `adminPassword` (secret), chạy `6.0 Login Admin`; response phải có `user.role = "Admin"` và script tự lưu `adminToken`. API đăng ký công khai vẫn chỉ nhận Rider/Driver.
 
+Postman **không tự đọc** `.env` của service. Nếu muốn import sẵn thông tin Admin vào Postman, chạy `python postman/build_local_environment.py` rồi import `postman/SwiftRide-Gateway.local.postman_environment.json`; file này được Git bỏ qua. Chọn environment **SwiftRide - API Gateway (Local private)** trước khi chạy refund. Nếu `6.0` trả 401, kiểm tra Identity đã được khởi động lại sau khi đặt bootstrap và tài khoản Admin đã tồn tại.
+
 ## Luồng WALLET thành công
 
 | Bước | Gọi | Xác minh |
@@ -27,9 +29,15 @@ Chạy RabbitMQ, SQL Server, PostgreSQL, MongoDB, bốn service và Gateway. Áp
 
 `4.6` chỉ ghi Trip, Saga và lệnh `ProcessPayment` vào Trip outbox. Publisher gửi lên `payment.process-payment`; Payment xử lý rồi phát `PaymentSettled`/`PaymentFailed`; Trip nhận kết quả và đóng chuyến. Vì vậy `PaymentPending` ngay sau dropoff và `404` ở bước 5.2 **trong lúc chờ** là bình thường. Poll cách nhau vài giây; 404 không phải kết quả cuối của ca thành công. `5.6` kiểm Gateway chặn `POST /payments` với 403 `INTERNAL_ENDPOINT_ONLY`.
 
+**Không chạy riêng folder 04/05 với `tripId` rỗng.** Bước 3.2 phải trả `201` và lưu `tripId`; bước 3.4 phải trả `DriverOffered`; bước 4.1 phải có offer đúng chuyến cho Driver đang đăng nhập. Collection dừng Runner ngay khi một điều kiện này không đạt. `GET /drivers/me/current-trip` có thể trả một chuyến cũ của Driver, vì vậy không dùng ID đó để thay cho `tripId` của chuyến mới.
+
 ## CARD giả lập: ba ca riêng
 
 Collection CARD đã có đủ chuỗi tạo chuyến → confirm CARD → nhận chuyến → dropoff → kiểm Payment. Gateway CARD hiện tại là **giả lập**, chỉ được đăng ký ở Development/Testing. Bật `Payment__FakeCard__Enabled=true` cho Payment Service, khởi động lại; tạo **chuyến mới cho mỗi token**. Trong environment, đặt `cardToken`, `expectedTripStatus`, `expectedPaymentStatus` theo bảng rồi chạy collection CARD:
+
+Collection CARD mặc định dùng Rider 02 (`0900000002`) và Driver 02 (`0910000002`) qua `cardRiderPhone`/`cardDriverPhone`. Điều này giúp chạy ca mới khi Rider 01/Driver 01 còn gắn với chuyến `PaymentPending` từ lượt thử cũ. Collection cũng có giá trị mặc định `test-card-approved` và chặn confirm nếu `cardToken` thiếu hoặc sai; không gửi nguyên văn `{{cardToken}}` vào event. Nếu hai tài khoản này cũng đang có chuyến, phải đối soát chuyến đó trước khi chạy lại.
+
+Nếu `Payment__FakeCard__Enabled=false`, consumer không tạo Payment: Trip sẽ kẹt `PaymentPending`, `GET /payments/by-trip` trả 404 và message lỗi có thể vào `payment.process-payment_error`. Sau khi bật cấu hình và khởi động lại Payment, tạo **chuyến mới** để kiểm tra; lần chạy cũ không tự trở thành giao dịch CARD thành công. Collection dùng `await pm.sendRequest` để chờ từng kết quả, thay cho callback chạy nền khiến Runner kiểm tra quá sớm.
 
 | `cardToken` | `expectedTripStatus` | `expectedPaymentStatus` | Kiểm thêm |
 |---|---|---|---|
