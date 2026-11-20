@@ -26,17 +26,16 @@ Chạy Payment phiên bản có API kiểm tra ví, Matching, Identity, Gateway,
 Không tắt Payment hoặc Matching trong ca này. Nếu Runner giới hạn thời gian script quá ngắn,
 đặt script timeout tối thiểu 60000 ms (Newman: `--timeout-script 60000`).
 
-## Biến collection
+## Biến environment dùng chung và biến ca kiểm tra
 
 | Biến | Mặc định | Ý nghĩa |
 | --- | --- | --- |
 | gatewayUrl | http://localhost:5000 | Gateway đang chạy |
-| expiryRiderPhone | 0900000002 | Rider không có chuyến hoạt động, có ví ít tiền |
-| expiryRiderPassword | 123456 | Mật khẩu seed local, đổi theo dữ liệu thực tế |
-| expiryDriverPhone | 0910000002 | Driver rảnh để báo giá thành công |
-| expiryDriverPassword | 123456 | Mật khẩu seed local |
-| expiryDropoffLat | 10.95 | Điểm đến xa để giá lớn hơn ví seed 20.000 |
-| expiryDropoffLng | 106.82 | Kinh độ điểm đến |
+| riderPhone | 0900000001 | Rider không có chuyến hoạt động, có ví ít tiền |
+| defaultPassword | 123456 | Mật khẩu seed local, đổi theo dữ liệu thực tế |
+| driverPhone | 0910000001 | Driver rảnh để báo giá thành công |
+| expiryDropoffLat | 11.5 | Biến collection: điểm đến xa để giá vượt số dư seed Rider 01 |
+| expiryDropoffLng | 107.5 | Biến collection: kinh độ điểm đến |
 
 Token, expiryTripId, balance và history lưu ở **Collection Variables**, không ghi đè
 tripId/paymentId của collection thanh toán. Không tạo biến môi trường trùng tên biến runtime

@@ -83,7 +83,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{cardRiderPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{riderPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
             },
             "url": {
               "raw": "{{gatewayUrl}}/auth/login",
@@ -179,7 +179,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{cardDriverPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{driverPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
             },
             "url": {
               "raw": "{{gatewayUrl}}/auth/login",
@@ -1371,16 +1371,6 @@
     {
       "key": "expectedPaymentStatus",
       "value": "SUCCEEDED",
-      "type": "string"
-    },
-    {
-      "key": "cardRiderPhone",
-      "value": "0900000002",
-      "type": "string"
-    },
-    {
-      "key": "cardDriverPhone",
-      "value": "0910000002",
       "type": "string"
     }
   ]

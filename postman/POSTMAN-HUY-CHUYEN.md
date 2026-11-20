@@ -6,14 +6,14 @@ Không ghép ca hủy vào collection thanh toán vì chuyến Cancelled không 
 
 ## Cấu hình
 
-Collection có gatewayUrl mặc định `http://localhost:5000`. Các biến tài khoản:
+Chọn environment dùng chung có gatewayUrl `http://localhost:5000`. Các biến tài khoản nằm trong environment:
 
 | Biến | Mặc định | Yêu cầu |
 | --- | --- | --- |
-| cancelRiderPhone | 0900000002 | Rider sở hữu chuyến; không có chuyến đang hoạt động khi tạo mới |
-| cancelOtherPhone | 0900000001 | Rider khác để kiểm tra 403 |
-| cancelDriverPhone | 0910000002 | Driver không Busy, có thể bật Available |
-| cancelRiderPassword / cancelOtherPassword / cancelDriverPassword | 123456 | Đổi theo tài khoản thực tế |
+| riderPhone | 0900000001 | Rider sở hữu chuyến; không có chuyến đang hoạt động khi tạo mới |
+| otherRiderPhone | 0900000002 | Rider khác để kiểm tra 403 |
+| driverPhone | 0910000001 | Driver không Busy, có thể bật Available |
+| defaultPassword / otherRiderPassword | 123456 | Mật khẩu cặp chính / Rider dùng kiểm tra sai quyền |
 | nonCancelableTripId | Rỗng | Chỉ cần cho folder 05 |
 
 Đây là tài khoản seed để chạy local, không phải mật khẩu Admin. Không điền mật khẩu thật vào file commit.
@@ -61,7 +61,7 @@ Không chạy cả 03 và 04 liền nhau khi Matching online vì kết quả có
 
 ## 05 — Không cho hủy sau khi đã tạo offer
 
-Dùng một chuyến hiện có thuộc cancelRiderPhone, đặt `nonCancelableTripId`.
+Dùng một chuyến hiện có thuộc riderPhone, đặt `nonCancelableTripId`.
 Ví dụ chạy E2E đến bước 3.5 DriverOffered rồi dừng, lấy ID đó. Không cần tạo chuyến mới trong folder này.
 
 Folder xác nhận trạng thái ngoài phạm vi hủy, gọi cancel phải trả **409**, rồi kiểm tra State/history không đổi.

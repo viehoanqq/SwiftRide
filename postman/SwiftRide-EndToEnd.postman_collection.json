@@ -83,7 +83,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{walletRiderPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{riderPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
             },
             "url": {
               "raw": "{{gatewayUrl}}/auth/login",
@@ -179,7 +179,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{walletDriverPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{driverPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
             },
             "url": {
               "raw": "{{gatewayUrl}}/auth/login",
@@ -1349,16 +1349,5 @@
       ]
     }
   ],
-  "variable": [
-    {
-      "key": "walletRiderPhone",
-      "value": "0900000002",
-      "type": "string"
-    },
-    {
-      "key": "walletDriverPhone",
-      "value": "0910000002",
-      "type": "string"
-    }
-  ]
+  "variable": []
 }

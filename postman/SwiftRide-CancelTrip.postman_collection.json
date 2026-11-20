@@ -6,41 +6,6 @@
   },
   "variable": [
     {
-      "key": "gatewayUrl",
-      "value": "http://localhost:5000",
-      "type": "string"
-    },
-    {
-      "key": "cancelRiderPhone",
-      "value": "0900000002",
-      "type": "string"
-    },
-    {
-      "key": "cancelRiderPassword",
-      "value": "123456",
-      "type": "string"
-    },
-    {
-      "key": "cancelOtherPhone",
-      "value": "0900000001",
-      "type": "string"
-    },
-    {
-      "key": "cancelOtherPassword",
-      "value": "123456",
-      "type": "string"
-    },
-    {
-      "key": "cancelDriverPhone",
-      "value": "0910000002",
-      "type": "string"
-    },
-    {
-      "key": "cancelDriverPassword",
-      "value": "123456",
-      "type": "string"
-    },
-    {
       "key": "nonCancelableTripId",
       "value": "",
       "type": "string"
@@ -66,7 +31,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{cancelRiderPhone}}\",\n  \"password\": \"{{cancelRiderPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{riderPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
             }
           },
           "event": [
@@ -113,7 +78,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{cancelDriverPhone}}\",\n  \"password\": \"{{cancelDriverPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{driverPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
             }
           },
           "event": [
@@ -320,7 +285,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{cancelOtherPhone}}\",\n  \"password\": \"{{cancelOtherPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{otherRiderPhone}}\",\n  \"password\": \"{{otherRiderPassword}}\"\n}"
             }
           },
           "event": [
@@ -785,7 +750,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{cancelRiderPhone}}\",\n  \"password\": \"{{cancelRiderPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{riderPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
             }
           },
           "event": [
@@ -1141,7 +1106,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{cancelRiderPhone}}\",\n  \"password\": \"{{cancelRiderPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{riderPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
             }
           },
           "event": [
@@ -1188,7 +1153,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{cancelDriverPhone}}\",\n  \"password\": \"{{cancelDriverPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{driverPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
             }
           },
           "event": [
@@ -1760,7 +1725,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{cancelRiderPhone}}\",\n  \"password\": \"{{cancelRiderPassword}}\"\n}"
+              "raw": "{\n  \"phone\": \"{{riderPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
             }
           },
           "event": [
@@ -1815,7 +1780,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if(!pm.variables.get('nonCancelableTripId')){",
-                  "pm.test('Có nonCancelableTripId',()=>pm.expect.fail('Nhập ID chuyến không được phép hủy, thuộc cancelRiderPhone'));",
+                  "pm.test('Có nonCancelableTripId',()=>pm.expect.fail('Nhập ID chuyến không được phép hủy, thuộc riderPhone'));",
                   "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
                   "}"
                 ]
@@ -1863,7 +1828,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if(!pm.variables.get('nonCancelableTripId')){",
-                  "pm.test('Có nonCancelableTripId',()=>pm.expect.fail('Nhập ID chuyến không được phép hủy, thuộc cancelRiderPhone'));",
+                  "pm.test('Có nonCancelableTripId',()=>pm.expect.fail('Nhập ID chuyến không được phép hủy, thuộc riderPhone'));",
                   "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
                   "}"
                 ]
@@ -1908,7 +1873,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if(!pm.variables.get('nonCancelableTripId')){",
-                  "pm.test('Có nonCancelableTripId',()=>pm.expect.fail('Nhập ID chuyến không được phép hủy, thuộc cancelRiderPhone'));",
+                  "pm.test('Có nonCancelableTripId',()=>pm.expect.fail('Nhập ID chuyến không được phép hủy, thuộc riderPhone'));",
                   "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
                   "}"
                 ]

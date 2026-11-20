@@ -6,38 +6,13 @@
   },
   "variable": [
     {
-      "key": "gatewayUrl",
-      "value": "http://localhost:5000",
-      "type": "string"
-    },
-    {
-      "key": "expiryRiderPhone",
-      "value": "0900000002",
-      "type": "string"
-    },
-    {
-      "key": "expiryRiderPassword",
-      "value": "123456",
-      "type": "string"
-    },
-    {
-      "key": "expiryDriverPhone",
-      "value": "0910000002",
-      "type": "string"
-    },
-    {
-      "key": "expiryDriverPassword",
-      "value": "123456",
-      "type": "string"
-    },
-    {
       "key": "expiryDropoffLat",
-      "value": "10.95",
+      "value": "11.5",
       "type": "string"
     },
     {
       "key": "expiryDropoffLng",
-      "value": "106.82",
+      "value": "107.5",
       "type": "string"
     }
   ],
@@ -58,7 +33,7 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"phone\": \"{{expiryRiderPhone}}\",\n  \"password\": \"{{expiryRiderPassword}}\"\n}"
+          "raw": "{\n  \"phone\": \"{{riderPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
         }
       },
       "event": [
@@ -106,7 +81,7 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"phone\": \"{{expiryDriverPhone}}\",\n  \"password\": \"{{expiryDriverPassword}}\"\n}"
+          "raw": "{\n  \"phone\": \"{{driverPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
         }
       },
       "event": [

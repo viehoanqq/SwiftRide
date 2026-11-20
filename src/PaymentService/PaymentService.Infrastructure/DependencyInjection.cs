@@ -24,6 +24,8 @@ public static class DependencyInjection
                 .UseSnakeCaseNamingConvention());
 
         services.AddScoped<IAccountRepository, AccountRepository>();
+        services.AddScoped<IWalletCreditRepository, WalletCreditRepository>();
+        services.AddScoped<WalletCreditService>();
         services.AddScoped<AccountRegistrationService>();
         services.AddScoped<IPaymentRepository, PaymentRepository>();
         services.AddScoped<ILedgerRepository, LedgerRepository>();

@@ -1,0 +1,754 @@
+{
+  "info": {
+    "name": "SwiftRide - Register Accounts & Admin Wallet Credit",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Run once before trip collections. Existing phones require the correct password. Admin credit is real persisted balance, not a gateway deposit. Keep walletCreditKey for replay; clear it explicitly for a new grant. No active trip reset."
+  },
+  "item": [
+    {
+      "name": "01. Register and wait for RabbitMQ onboarding",
+      "item": [
+        {
+          "name": "Register Rider",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/auth/register",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "const phone = String(pm.environment.get('riderPhone') || '').trim();",
+                  "const password = String(pm.environment.get('defaultPassword') || '');",
+                  "if (!/^0[0-9]{9}$/.test(phone) || password.length < 6 || phone === String(pm.environment.get('driverPhone') || '').trim()) {",
+                  "    pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "    throw new Error('Use two different 10-digit phone numbers and password of at least 6 characters.');",
+                  "}",
+                  "pm.environment.unset('riderToken'); pm.environment.unset('riderId');",
+                  "pm.variables.set('onboardingBody', JSON.stringify({fullName: pm.environment.get('riderFullName'), phone, password, role: 'Rider'}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "let body = {}; try { body = pm.response.json(); } catch {}",
+                  "const ok = pm.response.code === 201 || (pm.response.code === 409 && body.code === 'PHONE_ALREADY_EXISTS');",
+                  "pm.test('Registered or existing phone; login must verify ownership next', () => pm.expect(ok).to.eql(true));",
+                  "if (!ok) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Rider",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('onboardingBody', JSON.stringify({phone: String(pm.environment.get('riderPhone')).trim(), password: pm.environment.get('defaultPassword')}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "let body = {}; try { body = pm.response.json(); } catch {}",
+                  "const ok = pm.response.code === 200 && !!body.accessToken && body.user?.role === 'Rider' && body.user?.phone === String(pm.environment.get('riderPhone')).trim();",
+                  "pm.test('Login correct phone and role', () => pm.expect(ok).to.eql(true));",
+                  "if (ok) { pm.environment.set('riderToken', body.accessToken); pm.environment.set('riderId', body.user.id); }",
+                  "else pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register Driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/auth/register",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "const phone = String(pm.environment.get('driverPhone') || '').trim();",
+                  "const password = String(pm.environment.get('defaultPassword') || '');",
+                  "if (!/^0[0-9]{9}$/.test(phone) || password.length < 6 || phone === String(pm.environment.get('riderPhone') || '').trim()) {",
+                  "    pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "    throw new Error('Use two different 10-digit phone numbers and password of at least 6 characters.');",
+                  "}",
+                  "pm.environment.unset('driverToken'); pm.environment.unset('driverId');",
+                  "pm.variables.set('onboardingBody', JSON.stringify({fullName: pm.environment.get('driverFullName'), phone, password, role: 'Driver'}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "let body = {}; try { body = pm.response.json(); } catch {}",
+                  "const ok = pm.response.code === 201 || (pm.response.code === 409 && body.code === 'PHONE_ALREADY_EXISTS');",
+                  "pm.test('Registered or existing phone; login must verify ownership next', () => pm.expect(ok).to.eql(true));",
+                  "if (!ok) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('onboardingBody', JSON.stringify({phone: String(pm.environment.get('driverPhone')).trim(), password: pm.environment.get('defaultPassword')}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "let body = {}; try { body = pm.response.json(); } catch {}",
+                  "const ok = pm.response.code === 200 && !!body.accessToken && body.user?.role === 'Driver' && body.user?.phone === String(pm.environment.get('driverPhone')).trim();",
+                  "pm.test('Login correct phone and role', () => pm.expect(ok).to.eql(true));",
+                  "if (ok) { pm.environment.set('driverToken', body.accessToken); pm.environment.set('driverId', body.user.id); }",
+                  "else pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wait for Rider wallet (UserRegistered)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gatewayUrl}}/wallets/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "let ready = false;",
+                  "for (let attempt = 0; attempt < 60; attempt++) {",
+                  "    const response = await pm.sendRequest({url: pm.environment.get('gatewayUrl') + '/wallets/me', method: 'GET', header: {Authorization: 'Bearer ' + pm.environment.get('riderToken')}});",
+                  "    if (response.code === 200) { ready = true; break; }",
+                  "    if (response.code !== 404) { pm.execution.setNextRequest(null); pm.execution.skipRequest(); throw new Error('Onboarding request failed: HTTP ' + response.code); }",
+                  "    await new Promise(resolve => setTimeout(resolve, 1000));",
+                  "}",
+                  "if (!ready) { pm.execution.setNextRequest(null); pm.execution.skipRequest(); throw new Error('Registration event not applied after 60s; inspect Identity outbox and RabbitMQ consumers.'); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "pm.test('Wallet ready', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wait for Driver profile (DriverRegistered)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gatewayUrl}}/availability/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "let ready = false;",
+                  "for (let attempt = 0; attempt < 60; attempt++) {",
+                  "    const response = await pm.sendRequest({url: pm.environment.get('gatewayUrl') + '/availability/me', method: 'GET', header: {Authorization: 'Bearer ' + pm.environment.get('driverToken')}});",
+                  "    if (response.code === 200) { ready = true; break; }",
+                  "    if (response.code !== 404) { pm.execution.setNextRequest(null); pm.execution.skipRequest(); throw new Error('Onboarding request failed: HTTP ' + response.code); }",
+                  "    await new Promise(resolve => setTimeout(resolve, 1000));",
+                  "}",
+                  "if (!ready) { pm.execution.setNextRequest(null); pm.execution.skipRequest(); throw new Error('Registration event not applied after 60s; inspect Identity outbox and RabbitMQ consumers.'); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "pm.test('Correct Driver profile ready', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().id).to.eql(pm.environment.get('driverId')); });",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02. Admin grant and idempotency verification",
+      "item": [
+        {
+          "name": "Login Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "pm.environment.unset('adminToken');",
+                  "if (!pm.environment.get('adminPhone') || !pm.environment.get('adminPassword')) {",
+                  "    pm.execution.setNextRequest(null); pm.execution.skipRequest(); throw new Error('Fill adminPhone/adminPassword for an existing Admin.');",
+                  "}",
+                  "pm.variables.set('onboardingBody', JSON.stringify({phone: pm.environment.get('adminPhone'), password: pm.environment.get('adminPassword')}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "let body = {}; try { body = pm.response.json(); } catch {}",
+                  "const ok = pm.response.code === 200 && !!body.accessToken && body.user?.role === 'Admin';",
+                  "pm.test('Admin authenticated', () => pm.expect(ok).to.eql(true));",
+                  "if (ok) pm.environment.set('adminToken', body.accessToken);",
+                  "else pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read wallet before credit",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gatewayUrl}}/wallets/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "pm.test('Wallet exists', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.collectionVariables.set('creditBalanceBefore', pm.response.json().balance);",
+                  "else pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rider cannot grant money (403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{walletCreditKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/admin/wallets/{{riderId}}/credits",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "const amount = Number(pm.environment.get('walletCreditAmount'));",
+                  "const riderId = pm.environment.get('riderId');",
+                  "const reason = String(pm.environment.get('walletCreditReason') || '').trim();",
+                  "if (!riderId || !Number.isFinite(amount) || amount <= 0 || amount > 100000000 || !reason) {",
+                  "    pm.execution.setNextRequest(null); pm.execution.skipRequest(); throw new Error('Invalid riderId, walletCreditAmount or walletCreditReason.');",
+                  "}",
+                  "if (!pm.environment.get('walletCreditKey') || pm.environment.get('walletCreditRiderId') !== riderId) {",
+                  "    pm.environment.set('walletCreditKey', 'admin-credit-' + pm.variables.replaceIn('{{$guid}}'));",
+                  "    pm.environment.set('walletCreditRiderId', riderId);",
+                  "}",
+                  "pm.variables.set('onboardingBody', JSON.stringify({amount, reason}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "pm.test('Rider forbidden', () => pm.response.to.have.status(403));",
+                  "if (pm.response.code !== 403) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin credit Rider wallet (201 new / 200 replay)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{walletCreditKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/admin/wallets/{{riderId}}/credits",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "const amount = Number(pm.environment.get('walletCreditAmount'));",
+                  "const riderId = pm.environment.get('riderId');",
+                  "const reason = String(pm.environment.get('walletCreditReason') || '').trim();",
+                  "if (!riderId || !Number.isFinite(amount) || amount <= 0 || amount > 100000000 || !reason) {",
+                  "    pm.execution.setNextRequest(null); pm.execution.skipRequest(); throw new Error('Invalid riderId, walletCreditAmount or walletCreditReason.');",
+                  "}",
+                  "if (!pm.environment.get('walletCreditKey') || pm.environment.get('walletCreditRiderId') !== riderId) {",
+                  "    pm.environment.set('walletCreditKey', 'admin-credit-' + pm.variables.replaceIn('{{$guid}}'));",
+                  "    pm.environment.set('walletCreditRiderId', riderId);",
+                  "}",
+                  "pm.variables.set('onboardingBody', JSON.stringify({amount, reason}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "const ok = [200, 201].includes(pm.response.code);",
+                  "pm.test('Credit accepted', () => pm.expect(ok).to.eql(true));",
+                  "if (!ok) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "    const body = pm.response.json();",
+                  "    pm.test('Correct Rider and amount', () => {",
+                  "        pm.expect(body.riderId).to.eql(pm.environment.get('riderId'));",
+                  "        pm.expect(body.amount).to.eql(Number(pm.environment.get('walletCreditAmount')));",
+                  "    });",
+                  "    pm.environment.set('walletCreditId', body.id);",
+                  "    pm.collectionVariables.set('expectedCreditBalance', Number(pm.collectionVariables.get('creditBalanceBefore')) + (pm.response.code === 201 ? body.amount : 0));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Repeat same credit - must not add money again",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{walletCreditKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/admin/wallets/{{riderId}}/credits",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "const amount = Number(pm.environment.get('walletCreditAmount'));",
+                  "const riderId = pm.environment.get('riderId');",
+                  "const reason = String(pm.environment.get('walletCreditReason') || '').trim();",
+                  "if (!riderId || !Number.isFinite(amount) || amount <= 0 || amount > 100000000 || !reason) {",
+                  "    pm.execution.setNextRequest(null); pm.execution.skipRequest(); throw new Error('Invalid riderId, walletCreditAmount or walletCreditReason.');",
+                  "}",
+                  "if (!pm.environment.get('walletCreditKey') || pm.environment.get('walletCreditRiderId') !== riderId) {",
+                  "    pm.environment.set('walletCreditKey', 'admin-credit-' + pm.variables.replaceIn('{{$guid}}'));",
+                  "    pm.environment.set('walletCreditRiderId', riderId);",
+                  "}",
+                  "pm.variables.set('onboardingBody', JSON.stringify({amount, reason}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "pm.test('Idempotent replay', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().id).to.eql(pm.environment.get('walletCreditId')); });",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same key with different amount is rejected",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{walletCreditKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/admin/wallets/{{riderId}}/credits",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "const amount = Number(pm.environment.get('walletCreditAmount'));",
+                  "const riderId = pm.environment.get('riderId');",
+                  "const reason = String(pm.environment.get('walletCreditReason') || '').trim();",
+                  "if (!riderId || !Number.isFinite(amount) || amount <= 0 || amount > 100000000 || !reason) {",
+                  "    pm.execution.setNextRequest(null); pm.execution.skipRequest(); throw new Error('Invalid riderId, walletCreditAmount or walletCreditReason.');",
+                  "}",
+                  "if (!pm.environment.get('walletCreditKey') || pm.environment.get('walletCreditRiderId') !== riderId) {",
+                  "    pm.environment.set('walletCreditKey', 'admin-credit-' + pm.variables.replaceIn('{{$guid}}'));",
+                  "    pm.environment.set('walletCreditRiderId', riderId);",
+                  "}",
+                  "pm.variables.set('onboardingBody', JSON.stringify({amount, reason}));",
+                  "",
+                  "const original = Number(pm.environment.get('walletCreditAmount'));",
+                  "pm.variables.set('onboardingBody', JSON.stringify({amount: original === 1 ? 2 : 1, reason: pm.environment.get('walletCreditReason')}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "pm.test('Conflicting payload rejected', () => { pm.response.to.have.status(409); pm.expect(pm.response.json().code).to.eql('IDEMPOTENCY_CONFLICT'); });",
+                  "if (pm.response.code !== 409) pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify wallet balance after credit and replay",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gatewayUrl}}/wallets/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "pm.test('Balance credited exactly once', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().balance).to.be.closeTo(Number(pm.collectionVariables.get('expectedCreditBalance')), 0.001);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin view credit audit receipt",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gatewayUrl}}/admin/wallet-credits/{{walletCreditId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "pm.test('Audit receipt exists', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().id).to.eql(pm.environment.get('walletCreditId')); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rider view own credit history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gatewayUrl}}/wallets/me/credits",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "pm.test('Credit history available', () => { pm.response.to.have.status(200); pm.expect(pm.response.json()).to.be.an('array'); });",
+                  "pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

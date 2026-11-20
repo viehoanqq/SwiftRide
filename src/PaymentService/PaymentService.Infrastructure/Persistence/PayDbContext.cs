@@ -7,6 +7,7 @@ namespace PaymentService.Infrastructure.Persistence;
 
 public class PayDbContext(DbContextOptions<PayDbContext> options) : DbContext(options)
 {
+    public DbSet<WalletCredit> WalletCredits => Set<WalletCredit>();
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();

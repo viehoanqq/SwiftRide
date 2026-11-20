@@ -294,6 +294,70 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                     b.ToTable("payments", (string)null);
                 });
 
+            modelBuilder.Entity("PaymentService.Domain.Entities.WalletCredit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("account_id");
+
+                    b.Property<Guid>("AdminId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("admin_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<decimal>("BalanceAfter")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("balance_after");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("RiderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rider_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_wallet_credits");
+
+                    b.HasIndex("AccountId")
+                        .HasDatabaseName("ix_wallet_credits_account_id");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_wallet_credits_idempotency_key");
+
+                    b.HasIndex("RiderId", "CreatedAt")
+                        .HasDatabaseName("ix_wallet_credits_rider_id_created_at");
+
+                    b.ToTable("wallet_credits", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_wallet_credit_amount", "amount > 0 AND amount <= 100000000");
+                        });
+                });
+
             modelBuilder.Entity("PaymentService.Infrastructure.Messaging.FakeCardAuthorization", b =>
                 {
                     b.Property<string>("IdempotencyKey")
@@ -442,6 +506,16 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_ledger_entries_payments_payment_id");
+                });
+
+            modelBuilder.Entity("PaymentService.Domain.Entities.WalletCredit", b =>
+                {
+                    b.HasOne("PaymentService.Domain.Entities.Account", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_wallet_credits_accounts_account_id");
                 });
 
             modelBuilder.Entity("PaymentService.Infrastructure.Messaging.FakeCardRefund", b =>

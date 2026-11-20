@@ -4,6 +4,18 @@ Import [collection WALLET](SwiftRide-EndToEnd.postman_collection.json), [collect
 
 ## Chuẩn bị
 
+**Tài khoản mới:** chạy [collection đăng ký và Admin cấp tiền](SwiftRide-Onboarding.postman_collection.json)
+theo [hướng dẫn](POSTMAN-DANG-KY-VA-CAP-TIEN.md) trước E2E. Điền số điện thoại Rider/Driver,
+mật khẩu và thông tin Admin trong cùng environment. Collection chờ ví/hồ sơ qua RabbitMQ,
+cấp tiền một lần theo key và kiểm tra gọi lại không cộng trùng. Đây là số dư lưu thật trong DB.
+
+**Tài khoản dùng chung cho tất cả collection:** chọn một environment duy nhất,
+`riderPhone=0900000001`, `driverPhone=0910000001`, `defaultPassword=123456` (hoặc mật khẩu hiện tại).
+WALLET, CARD, hủy chuyến và hết hạn ví đều đọc ba biến này; không còn biến tài khoản riêng theo collection.
+`otherRiderPhone=0900000002` chỉ dùng cho ca sai quyền. Import lại cả environment và collection sau cập nhật;
+xóa các biến cũ cardRiderPhone/cardDriverPhone, walletRiderPhone/walletDriverPhone nếu còn trong Postman.
+Không tự chuyển tài khoản khi Busy/ACTIVE_TRIP_EXISTS: xử lý chuyến cũ trước khi chạy ca tiếp theo.
+
 **Ca kiểm tra nhanh 30 giây:** import [WalletExpiry30s](SwiftRide-WalletExpiry30s.postman_collection.json)
 và chạy theo [hướng dẫn](POSTMAN-WALLET-EXPIRY-30S.md). Collection kiểm tra confirm thiếu tiền hai lần,
 giữ Quoted, worker tự Cancelled theo hạn gốc; ví/ledger không đổi và không có payment.
@@ -58,7 +70,7 @@ Chạy ca hủy riêng; không tiếp tục các bước nhận chuyến/thanh t
 
 Collection CARD đã có đủ chuỗi tạo chuyến → confirm CARD → nhận chuyến → dropoff → kiểm Payment. Gateway CARD hiện tại là **giả lập**, chỉ được đăng ký ở Development/Testing. Bật `Payment__FakeCard__Enabled=true` cho Payment Service, khởi động lại; tạo **chuyến mới cho mỗi token**. Trong environment, đặt `cardToken`, `expectedTripStatus`, `expectedPaymentStatus` theo bảng rồi chạy collection CARD:
 
-Collection CARD mặc định dùng Rider 02 (`0900000002`) và Driver 02 (`0910000002`) qua `cardRiderPhone`/`cardDriverPhone`. Điều này giúp chạy ca mới khi Rider 01/Driver 01 còn gắn với chuyến `PaymentPending` từ lượt thử cũ. Collection cũng có giá trị mặc định `test-card-approved` và chặn confirm nếu `cardToken` thiếu hoặc sai; không gửi nguyên văn `{{cardToken}}` vào event. Nếu hai tài khoản này cũng đang có chuyến, phải đối soát chuyến đó trước khi chạy lại.
+Collection CARD dùng `riderPhone`/`driverPhone` chung với WALLET. Collection có giá trị mặc định `test-card-approved` và chặn confirm nếu `cardToken` thiếu hoặc sai; không gửi nguyên văn `{{cardToken}}` vào event. Nếu tài khoản đang có chuyến, xử lý chuyến đó trước khi chạy lại.
 
 Nếu `Payment__FakeCard__Enabled=false`, consumer không tạo Payment: Trip sẽ kẹt `PaymentPending`, `GET /payments/by-trip` trả 404 và message lỗi có thể vào `payment.process-payment_error`. Sau khi bật cấu hình và khởi động lại Payment, tạo **chuyến mới** để kiểm tra; lần chạy cũ không tự trở thành giao dịch CARD thành công. Collection dùng `await pm.sendRequest` để chờ từng kết quả, thay cho callback chạy nền khiến Runner kiểm tra quá sớm.
 
