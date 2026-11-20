@@ -6,6 +6,10 @@ của các collection E2E cũ vì ca này kiểm tra một hạn ngắn. Script 
 
 ## Chuẩn bị
 
+Collection bắt đầu login, không tự đăng ký hay sửa ví. Chuẩn bị tài khoản bằng Onboarding nếu cần.
+Dùng SwiftRide-Wallet để đặt số dư thấp hơn giá chuyến trước khi test; collection không reset ví.
+Xem [cấu hình Admin và số tiền](POSTMAN-DANG-KY-VA-CAP-TIEN.md).
+
 Trong `src/TripService/TripService.Api/appsettings.json`, sửa:
 
 ```json

@@ -1,0 +1,310 @@
+{
+  "info": {
+    "name": "SwiftRide - Admin Set Wallet Balance",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Login Rider/Driver to resolve IDs, login Admin, set absolute balances. No Idempotency-Key. Does not register accounts."
+  },
+  "item": [
+    {
+      "name": "Login and set wallet balances",
+      "item": [
+        {
+          "name": "Login Rider",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('onboardingBody', JSON.stringify({phone: String(pm.environment.get('riderPhone')).trim(), password: pm.environment.get('defaultPassword')}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "let body = {}; try { body = pm.response.json(); } catch {}",
+                  "const ok = pm.response.code === 200 && !!body.accessToken && body.user?.role === 'Rider' && body.user?.phone === String(pm.environment.get('riderPhone')).trim();",
+                  "pm.test('Login correct phone and role', () => pm.expect(ok).to.eql(true));",
+                  "if (ok) { pm.environment.set('riderToken', body.accessToken); pm.environment.set('riderId', body.user.id); }",
+                  "else pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('onboardingBody', JSON.stringify({phone: String(pm.environment.get('driverPhone')).trim(), password: pm.environment.get('defaultPassword')}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "let body = {}; try { body = pm.response.json(); } catch {}",
+                  "const ok = pm.response.code === 200 && !!body.accessToken && body.user?.role === 'Driver' && body.user?.phone === String(pm.environment.get('driverPhone')).trim();",
+                  "pm.test('Login correct phone and role', () => pm.expect(ok).to.eql(true));",
+                  "if (ok) { pm.environment.set('driverToken', body.accessToken); pm.environment.set('driverId', body.user.id); }",
+                  "else pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "pm.environment.unset('adminToken');",
+                  "if (!pm.environment.get('adminPhone') || !pm.environment.get('adminPassword')) {",
+                  "    pm.execution.setNextRequest(null); pm.execution.skipRequest(); throw new Error('Fill adminPhone/adminPassword for an existing Admin.');",
+                  "}",
+                  "pm.variables.set('onboardingBody', JSON.stringify({phone: pm.environment.get('adminPhone'), password: pm.environment.get('adminPassword')}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "let body = {}; try { body = pm.response.json(); } catch {}",
+                  "const ok = pm.response.code === 200 && !!body.accessToken && body.user?.role === 'Admin';",
+                  "pm.test('Admin authenticated', () => pm.expect(ok).to.eql(true));",
+                  "if (ok) pm.environment.set('adminToken', body.accessToken);",
+                  "else pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Set Rider wallet balance (Admin)",
+          "request": {
+            "method": "PUT",
+            "url": "{{gatewayUrl}}/admin/wallets/{{riderId}}/balance",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{setBalanceBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const balance = Number(pm.environment.get('riderBalance'));",
+                  "if (!pm.environment.get('riderId') || pm.environment.get('riderBalance') === '' || !Number.isFinite(balance) || balance < 0 || balance > 100000000) { pm.execution.setNextRequest(null); pm.execution.skipRequest(); throw new Error('Invalid target user or balance'); }",
+                  "pm.variables.set('setBalanceBody', JSON.stringify({balance, ownerType: 'Rider'}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Balance set (200)', () => pm.response.to.have.status(200));",
+                  "if(pm.response.code !== 200) pm.execution.setNextRequest(null); else { const b=pm.response.json(); pm.test('Correct owner and balance',()=>{pm.expect(b.userId).to.eql(pm.environment.get('riderId')); pm.expect(b.balance).to.eql(Number(pm.environment.get('riderBalance')));}); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read Rider wallet",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/wallets/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Wallet balance matches',()=>{pm.response.to.have.status(200);pm.expect(pm.response.json().balance).to.eql(Number(pm.environment.get('riderBalance')));});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Set Driver wallet balance (Admin)",
+          "request": {
+            "method": "PUT",
+            "url": "{{gatewayUrl}}/admin/wallets/{{driverId}}/balance",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{setBalanceBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const balance = Number(pm.environment.get('driverBalance'));",
+                  "if (!pm.environment.get('driverId') || pm.environment.get('driverBalance') === '' || !Number.isFinite(balance) || balance < 0 || balance > 100000000) { pm.execution.setNextRequest(null); pm.execution.skipRequest(); throw new Error('Invalid target user or balance'); }",
+                  "pm.variables.set('setBalanceBody', JSON.stringify({balance, ownerType: 'Driver'}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Balance set (200)', () => pm.response.to.have.status(200));",
+                  "if(pm.response.code !== 200) pm.execution.setNextRequest(null); else { const b=pm.response.json(); pm.test('Correct owner and balance',()=>{pm.expect(b.userId).to.eql(pm.environment.get('driverId')); pm.expect(b.balance).to.eql(Number(pm.environment.get('driverBalance')));}); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read Driver wallet",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/wallets/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Wallet balance matches',()=>{pm.response.to.have.status(200);pm.expect(pm.response.json().balance).to.eql(Number(pm.environment.get('driverBalance')));});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

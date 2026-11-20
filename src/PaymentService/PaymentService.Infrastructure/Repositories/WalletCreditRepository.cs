@@ -21,7 +21,7 @@ public sealed class WalletCreditRepository(PayDbContext db) : IWalletCreditRepos
         db.WalletCredits.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, ct);
     public Task AddAsync(WalletCredit credit, CancellationToken ct) =>
         db.WalletCredits.AddAsync(credit, ct).AsTask();
-    public async Task<IReadOnlyList<WalletCredit>> ListAsync(Guid riderId, int skip, CancellationToken ct) =>
-        await db.WalletCredits.AsNoTracking().Where(x => x.RiderId == riderId)
+    public async Task<IReadOnlyList<WalletCredit>> ListAsync(Guid userId, int skip, CancellationToken ct) =>
+        await db.WalletCredits.AsNoTracking().Where(x => x.UserId == userId)
             .OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id).Skip(skip).Take(50).ToListAsync(ct);
 }

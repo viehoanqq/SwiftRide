@@ -2,10 +2,105 @@
   "info": {
     "_postman_id": "67ad5d09-c4b5-4808-9066-3fc511bb1461",
     "name": "SwiftRide - CARD end-to-end (approved, declined, unknown)",
-    "description": "CARD simulator: only when Payment runs Development/Testing with FakeCard enabled. Set cardToken, expectedTripStatus and expectedPaymentStatus in environment for each new trip.",
+    "description": "Login with configured riderPhone/driverPhone, then run the scenario. Register new accounts and set wallet balances in the separate collections first. No automatic registration or balance reset.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
+    {
+      "name": "01. Login Rider and Driver",
+      "item": [
+        {
+          "name": "Login Rider",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('onboardingBody', JSON.stringify({phone: String(pm.environment.get('riderPhone')).trim(), password: pm.environment.get('defaultPassword')}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "let body = {}; try { body = pm.response.json(); } catch {}",
+                  "const ok = pm.response.code === 200 && !!body.accessToken && body.user?.role === 'Rider' && body.user?.phone === String(pm.environment.get('riderPhone')).trim();",
+                  "pm.test('Login correct phone and role', () => pm.expect(ok).to.eql(true));",
+                  "if (ok) { pm.environment.set('riderToken', body.accessToken); pm.environment.set('riderId', body.user.id); }",
+                  "else pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gatewayUrl}}/auth/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{onboardingBody}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set('onboardingBody', JSON.stringify({phone: String(pm.environment.get('driverPhone')).trim(), password: pm.environment.get('defaultPassword')}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "let body = {}; try { body = pm.response.json(); } catch {}",
+                  "const ok = pm.response.code === 200 && !!body.accessToken && body.user?.role === 'Driver' && body.user?.phone === String(pm.environment.get('driverPhone')).trim();",
+                  "pm.test('Login correct phone and role', () => pm.expect(ok).to.eql(true));",
+                  "if (ok) { pm.environment.set('driverToken', body.accessToken); pm.environment.set('driverId', body.user.id); }",
+                  "else pm.execution.setNextRequest(null);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
     {
       "name": "00. System Health Check",
       "item": [
@@ -39,203 +134,6 @@
               ]
             },
             "description": "Kiểm tra trạng thái kết nối Database của cả 4 microservice thông qua API Gateway."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "01. Auth & Onboarding (Identity Service)",
-      "item": [
-        {
-          "name": "1.1 Login Rider (configured account)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Đăng nhập Rider thành công (200 OK)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "const res = pm.response.json();",
-                  "if (res && res.accessToken) {",
-                  "    pm.environment.set('riderToken', res.accessToken);",
-                  "    pm.environment.set('riderId', res.user.id);",
-                  "    console.log('Đã lưu riderToken và riderId:', res.user.id);",
-                  "}",
-                  "",
-                  "pm.test('User có role là Rider', function () {",
-                  "    pm.expect(res.user.role).to.eql('Rider');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{riderPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
-            },
-            "url": {
-              "raw": "{{gatewayUrl}}/auth/login",
-              "host": [
-                "{{gatewayUrl}}"
-              ],
-              "path": [
-                "auth",
-                "login"
-              ]
-            },
-            "description": "Đăng nhập tài khoản Rider01 có sẵn trong SeedData (Số dư ví: 500.000đ) và tự động lưu `riderToken`, `riderId` vào Environment."
-          },
-          "response": []
-        },
-        {
-          "name": "1.2 Get Rider Profile (/auth/me)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Lấy thông tin Rider thành công (200 OK)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.id).to.eql(pm.environment.get('riderId'));",
-                  "    pm.expect(res.role).to.eql('Rider');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{riderToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{gatewayUrl}}/auth/me",
-              "host": [
-                "{{gatewayUrl}}"
-              ],
-              "path": [
-                "auth",
-                "me"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "1.3 Login Driver (configured account)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Đăng nhập Driver thành công (200 OK)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "const res = pm.response.json();",
-                  "if (res && res.accessToken) {",
-                  "    pm.environment.set('driverToken', res.accessToken);",
-                  "    pm.environment.set('driverId', res.user.id);",
-                  "    console.log('Đã lưu driverToken và driverId:', res.user.id);",
-                  "}",
-                  "",
-                  "pm.test('User có role là Driver', function () {",
-                  "    pm.expect(res.user.role).to.eql('Driver');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{driverPhone}}\",\n  \"password\": \"{{defaultPassword}}\"\n}"
-            },
-            "url": {
-              "raw": "{{gatewayUrl}}/auth/login",
-              "host": [
-                "{{gatewayUrl}}"
-              ],
-              "path": [
-                "auth",
-                "login"
-              ]
-            },
-            "description": "Đăng nhập tài khoản Driver01 (Lê Văn Cường) và tự động lưu `driverToken`, `driverId` vào Environment."
-          },
-          "response": []
-        },
-        {
-          "name": "1.4 Get Driver Profile (/auth/me)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Lấy thông tin Driver thành công (200 OK)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.id).to.eql(pm.environment.get('driverId'));",
-                  "    pm.expect(res.role).to.eql('Driver');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{driverToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{gatewayUrl}}/auth/me",
-              "host": [
-                "{{gatewayUrl}}"
-              ],
-              "path": [
-                "auth",
-                "me"
-              ]
-            }
           },
           "response": []
         }

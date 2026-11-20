@@ -12,7 +12,6 @@ namespace PaymentService.Api.Controllers;
 public sealed class WalletsController(IWalletAppService wallets, IWalletCreditRepository credits) : ControllerBase
 {
     [HttpGet("me/credits")]
-    [Authorize(Policy = PaymentSecurity.RiderPolicy)]
     public async Task<IActionResult> GetCredits([FromQuery] int skip = 0, CancellationToken cancellationToken = default)
     {
         if (skip < 0) return BadRequest(new ApiError("VALIDATION_ERROR", "skip phải từ 0 trở lên."));

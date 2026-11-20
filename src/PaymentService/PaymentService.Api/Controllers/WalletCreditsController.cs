@@ -11,13 +11,10 @@ namespace PaymentService.Api.Controllers;
 [Authorize(Roles = "Admin")]
 public sealed class WalletCreditsController(WalletCreditService service, IWalletCreditRepository credits) : ControllerBase
 {
-    [HttpPost("admin/wallets/{riderId:guid}/credits")]
-    public async Task<IActionResult> Credit(Guid riderId, CreditWalletRequest request,
-        [FromHeader(Name = "Idempotency-Key")] string key, CancellationToken ct)
-    {
-        var result = await service.CreditAsync(riderId, User.GetUserId(), request, key, ct);
-        return result.IsReplay ? Ok(result.Credit) : CreatedAtAction(nameof(Get), new { id = result.Credit.Id }, result.Credit);
-    }
+    [HttpPut("admin/wallets/{userId:guid}/balance")]
+    public async Task<IActionResult> SetBalance(Guid userId, SetWalletBalanceRequest request,
+        CancellationToken ct) =>
+        Ok(await service.SetBalanceAsync(userId, User.GetUserId(), request, ct));
 
     [HttpGet("admin/wallet-credits/{id:guid}")]
     public async Task<IActionResult> Get(Guid id, CancellationToken ct) =>

@@ -335,9 +335,9 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("reason");
 
-                    b.Property<Guid>("RiderId")
+                    b.Property<Guid>("UserId")
                         .HasColumnType("uuid")
-                        .HasColumnName("rider_id");
+                        .HasColumnName("user_id");
 
                     b.HasKey("Id")
                         .HasName("pk_wallet_credits");
@@ -349,12 +349,12 @@ namespace PaymentService.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_wallet_credits_idempotency_key");
 
-                    b.HasIndex("RiderId", "CreatedAt")
-                        .HasDatabaseName("ix_wallet_credits_rider_id_created_at");
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_wallet_credits_user_id_created_at");
 
                     b.ToTable("wallet_credits", null, t =>
                         {
-                            t.HasCheckConstraint("ck_wallet_credit_amount", "amount > 0 AND amount <= 100000000");
+                            t.HasCheckConstraint("ck_wallet_credit_amount", "amount <> 0");
                         });
                 });
 

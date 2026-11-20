@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "SwiftRide - Rider Cancel Trip (run one folder at a time)",
-    "description": "Chạy riêng từng folder. 01 tự động Quoted + quyền + replay. 02 tắt Matching trước. Chạy 03 online, tắt Matching rồi chạy 04. 05 dùng chuyến hiện có. Xem POSTMAN-HUY-CHUYEN.md. Mỗi folder tự dừng Runner.",
+    "description": "Login with configured riderPhone/driverPhone, then run the scenario. Register new accounts and set wallet balances in the separate collections first. No automatic registration or balance reset.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

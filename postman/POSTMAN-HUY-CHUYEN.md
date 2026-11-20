@@ -1,7 +1,8 @@
 # Kiểm thử API hủy chuyến
 
 Import [SwiftRide-CancelTrip.postman_collection.json](SwiftRide-CancelTrip.postman_collection.json).
-Chạy **riêng từng folder** bằng Runner; mỗi folder tự dừng cuối luồng.
+Collection bắt đầu login. Tạo tài khoản bằng Onboarding và đặt số dư bằng SwiftRide-Wallet trước nếu cần.
+Các ca tắt Matching chạy riêng từng folder sau bước chuẩn bị; mỗi folder nghiệp vụ tự dừng cuối luồng.
 Không ghép ca hủy vào collection thanh toán vì chuyến Cancelled không tiếp tục nhận tài xế/dropoff.
 
 ## Cấu hình

@@ -14,8 +14,9 @@ public sealed class WalletCreditConfiguration : IEntityTypeConfiguration<WalletC
         builder.Property(x => x.Reason).HasMaxLength(500).IsRequired();
         builder.Property(x => x.Amount).HasPrecision(18, 2);
         builder.Property(x => x.BalanceAfter).HasPrecision(18, 2);
-        builder.HasIndex(x => new { x.RiderId, x.CreatedAt });
+        builder.HasIndex(x => new { x.UserId, x.CreatedAt });
         builder.HasOne<Account>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
-        builder.ToTable("wallet_credits", t => t.HasCheckConstraint("ck_wallet_credit_amount", "amount > 0 AND amount <= 100000000"));
+        // Amount is the signed balance adjustment; existing credit history is preserved.
+        builder.ToTable("wallet_credits", t => t.HasCheckConstraint("ck_wallet_credit_amount", "amount <> 0"));
     }
 }

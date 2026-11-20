@@ -1,13 +1,15 @@
 # Kiểm thử SwiftRide bằng Postman
 
-Import [collection WALLET](SwiftRide-EndToEnd.postman_collection.json), [collection CARD](SwiftRide-Card-EndToEnd.postman_collection.json), [collection refund](SwiftRide-RefundSaga.postman_collection.json) và [environment](SwiftRide-Gateway.postman_environment.json), chọn environment **SwiftRide - API Gateway (Local)**. Mỗi collection chạy riêng; refund chỉ bắt đầu sau khi chuyến đã thanh toán.
+**Luồng mới:** đăng ký bằng Onboarding, đặt số dư bằng SwiftRide-Wallet, rồi chạy collection nghiệp vụ.
+Các collection nghiệp vụ bắt đầu login, không tự đăng ký hoặc đặt số dư.
+RefundSaga tự tạo chuyến mới và thanh toán trước khi hoàn.
+Xem [hướng dẫn mới](POSTMAN-DANG-KY-VA-CAP-TIEN.md).
+
+Import [collection WALLET](SwiftRide-EndToEnd.postman_collection.json), [collection CARD](SwiftRide-Card-EndToEnd.postman_collection.json), [collection refund](SwiftRide-RefundSaga.postman_collection.json) và [environment](SwiftRide-Gateway.postman_environment.json), chọn environment **SwiftRide - API Gateway (Local)**. Mỗi collection chạy riêng từ đầu; refund tự chạy chuyến đến Paid trước khi hoàn.
 
 ## Chuẩn bị
 
-**Tài khoản mới:** chạy [collection đăng ký và Admin cấp tiền](SwiftRide-Onboarding.postman_collection.json)
-theo [hướng dẫn](POSTMAN-DANG-KY-VA-CAP-TIEN.md) trước E2E. Điền số điện thoại Rider/Driver,
-mật khẩu và thông tin Admin trong cùng environment. Collection chờ ví/hồ sơ qua RabbitMQ,
-cấp tiền một lần theo key và kiểm tra gọi lại không cộng trùng. Đây là số dư lưu thật trong DB.
+**Tài khoản mới:** chạy Onboarding rồi SwiftRide-Wallet trước E2E. Tài khoản đã có có thể login trực tiếp.
 
 **Tài khoản dùng chung cho tất cả collection:** chọn một environment duy nhất,
 `riderPhone=0900000001`, `driverPhone=0910000001`, `defaultPassword=123456` (hoặc mật khẩu hiện tại).

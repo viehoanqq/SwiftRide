@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "SwiftRide - Wallet Insufficient & Quote Auto Cancel (30s)",
-    "description": "Chạy toàn collection, Runner delay=0. Trip QuoteConfirmationTimeoutSeconds=30, QuoteExpiryPollSeconds=5, restart Trip; Payment và Matching phải online. Không gọi /cancel, không sửa DB. Confirm thiếu tiền hai lần, lần 2 khoảng giây 15; worker phải hủy theo hạn gốc. Xem POSTMAN-WALLET-EXPIRY-30S.md.",
+    "description": "Login with configured riderPhone/driverPhone, then run the scenario. Register new accounts and set wallet balances in the separate collections first. No automatic registration or balance reset.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
