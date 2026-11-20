@@ -13,6 +13,7 @@ using TripService.Infrastructure.Outbox;
 using TripService.Infrastructure.Repositories; 
 using TripService.Application.Services;
 using TripService.Application.Sagas;
+using TripService.Application.Options;
 using TripService.Infrastructure.Sagas;
 using SwiftRide.Contracts.Events;
 
@@ -27,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<ITripRepository, TripRepository>();     // thÃªm: dÃ¹ng DbContext nÃªn Scoped
         services.AddScoped<IPaymentSagaRepository, PaymentSagaRepository>();
         services.AddScoped<PaymentSagaTimeoutDispatcher>();
+        services.AddScoped<QuoteExpiryDispatcher>();
         var timeoutPollSeconds = configuration.GetValue("PaymentSaga:TimeoutPollSeconds", 5);
         var timeoutBatchSize = configuration.GetValue("PaymentSaga:TimeoutBatchSize", 50);
         if (timeoutPollSeconds is < 1 or > 300 || timeoutBatchSize is < 1 or > 500)
@@ -90,6 +92,7 @@ public static class DependencyInjection
         if (environment?.IsEnvironment("Testing") != true)
         {
             services.AddHostedService<TripOutboxPublisher>();
+            services.AddHostedService<QuoteExpiryWorker>();
             services.AddHostedService<PaymentSagaTimeoutScheduler>();
             services.AddHostedService<PaymentSagaReconciler>();
         }

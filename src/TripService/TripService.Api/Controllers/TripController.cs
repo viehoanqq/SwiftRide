@@ -51,7 +51,7 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     [Authorize(Roles = "Rider")]
     public async Task<IActionResult> Confirm(Guid id, [FromBody] ConfirmTripRequest request, CancellationToken cancellationToken)
     {
-        var result = await tripService.ConfirmAsync(id, UserId, request);
+        var result = await tripService.ConfirmAsync(id, UserId, request, cancellationToken);
         return result.Status == "FindingDriver"
             ? AcceptedAtAction(nameof(GetById), new { id }, result) : Ok(result);
     }

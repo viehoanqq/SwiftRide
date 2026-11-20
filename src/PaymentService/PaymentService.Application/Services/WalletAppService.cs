@@ -9,6 +9,14 @@ namespace PaymentService.Application.Services;
 public sealed class WalletAppService(IAccountRepository accounts, ILedgerRepository ledger,
     IUnitOfWork unitOfWork) : IWalletAppService
 {
+    public async Task<WalletBalanceResponse> GetRiderBalanceAsync(Guid riderId, CancellationToken cancellationToken)
+    {
+        if (riderId == Guid.Empty) throw new ValidationException("RiderId không hợp lệ.");
+        var account = await accounts.GetByOwnerAsync(riderId.ToString("D"), OwnerType.Rider, cancellationToken)
+            ?? throw new NotFoundException(PaymentErrorCodes.AccountNotFound, "Ví chưa sẵn sàng.");
+        return new WalletBalanceResponse(riderId, account.Balance);
+    }
+
     public Task<WalletResponse> GetMineAsync(Guid userId, string role, CancellationToken cancellationToken)
     {
         if (userId == Guid.Empty || role is not ("Rider" or "Driver"))

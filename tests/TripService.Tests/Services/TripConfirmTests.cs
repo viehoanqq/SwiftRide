@@ -13,11 +13,14 @@ public class TripConfirmTests
 {
     private readonly Mock<ITripRepository> _mockTripRepo = new();
     private readonly Mock<IMatchingClient> _mockMatchingClient = new();
+    private readonly Mock<IPaymentClient> _payment = new();
     private readonly TripAppService _service;
 
     public TripConfirmTests()
     {
-        _service = new TripAppService(_mockTripRepo.Object, Mock.Of<IDriverStatusClient>());
+        _payment.Setup(x => x.GetRiderBalanceAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid id, CancellationToken _) => new SwiftRide.Contracts.Payments.WalletBalanceResponse(id, 100000m));
+        _service = new TripAppService(_mockTripRepo.Object, Mock.Of<IDriverStatusClient>(), paymentClient: _payment.Object);
         _mockMatchingClient
             .Setup(client => client.MatchAsync(It.IsAny<MatchDriverRequest>()))
             .ReturnsAsync(new MatchDriverResult(
@@ -47,10 +50,60 @@ public class TripConfirmTests
             Strategy = "Standard",
             DistanceKm = 3.0,
             DurationMin = 10.0,
-            QuotedAt = DateTime.UtcNow.AddMinutes(-5)
+            QuotedAt = DateTime.UtcNow.AddMinutes(-1)
         });
 
         return trip;
+    }
+
+    [Theory]
+    [InlineData(49999, false)]
+    [InlineData(50000, true)]
+    public async Task WalletBalance_MustCoverStoredFare(decimal balance, bool accepted)
+    {
+        var trip = CreateSampleQuotedTrip(Guid.NewGuid());
+        var quotedAt = trip.Fare!.QuotedAt;
+        _mockTripRepo.Setup(r => r.GetByIdAsync(trip.Id)).ReturnsAsync(trip);
+        _payment.Setup(p => p.GetRiderBalanceAsync(trip.RiderId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SwiftRide.Contracts.Payments.WalletBalanceResponse(trip.RiderId, balance));
+        if (accepted)
+            Assert.Equal("FindingDriver", (await _service.ConfirmAsync(trip.Id, trip.RiderId, new(true, "WALLET"))).Status);
+        else
+        {
+            var ex = await Assert.ThrowsAsync<ConflictException>(() => _service.ConfirmAsync(trip.Id, trip.RiderId, new(true, "WALLET")));
+            Assert.Equal("INSUFFICIENT_FUNDS", ex.Code);
+            Assert.Equal(TripStatus.Quoted, trip.Status);
+            Assert.Equal(FareStatus.Pending, trip.Fare.Status);
+            _mockTripRepo.Verify(r => r.SaveChangesAsync(), Times.Never);
+            _mockTripRepo.Verify(r => r.AddOutboxEvent(It.IsAny<SwiftRide.Contracts.Events.IIntegrationEvent>()), Times.Never);
+        }
+        Assert.Equal(quotedAt, trip.Fare.QuotedAt);
+    }
+
+    [Fact]
+    public async Task ExpiredQuote_CancelsBeforeCheckingWallet()
+    {
+        var trip = CreateSampleQuotedTrip(Guid.NewGuid());
+        trip.Fare!.QuotedAt = DateTime.UtcNow.AddMinutes(-6);
+        _mockTripRepo.Setup(r => r.GetByIdAsync(trip.Id)).ReturnsAsync(trip);
+        var ex = await Assert.ThrowsAsync<ConflictException>(() => _service.ConfirmAsync(trip.Id, trip.RiderId, new(true, "WALLET")));
+        Assert.Equal("QUOTE_EXPIRED", ex.Code);
+        Assert.Equal(TripStatus.Cancelled, trip.Status);
+        Assert.Equal(FareStatus.Rejected, trip.Fare.Status);
+        _payment.VerifyNoOtherCalls();
+        _mockTripRepo.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task WalletUnavailable_DoesNotChangeTrip()
+    {
+        var trip = CreateSampleQuotedTrip(Guid.NewGuid());
+        _mockTripRepo.Setup(r => r.GetByIdAsync(trip.Id)).ReturnsAsync(trip);
+        _payment.Setup(p => p.GetRiderBalanceAsync(trip.RiderId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new DownstreamException(504, "PAYMENT_TIMEOUT", "Timeout"));
+        await Assert.ThrowsAsync<DownstreamException>(() => _service.ConfirmAsync(trip.Id, trip.RiderId, new(true, "WALLET")));
+        Assert.Equal(TripStatus.Quoted, trip.Status);
+        _mockTripRepo.Verify(r => r.SaveChangesAsync(), Times.Never);
     }
 
     [Fact]

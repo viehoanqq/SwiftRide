@@ -4,6 +4,14 @@ Import [collection WALLET](SwiftRide-EndToEnd.postman_collection.json), [collect
 
 ## Chuẩn bị
 
+**Confirm WALLET kiểm tra ví tại backend:** thiếu tiền trả 409 INSUFFICIENT_FUNDS và giữ Quoted;
+không chuyển sang FindingDriver. Báo giá chưa confirm thành công sẽ tự hủy sau 300 giây,
+theo cấu hình Trip trong appsettings. Xem [kiểm tra ví và hết hạn](../docs/WALLET-CONFIRM-VA-HET-HAN-BAO-GIA.md).
+
+API hủy chuyến có [collection riêng](SwiftRide-CancelTrip.postman_collection.json) và
+[hướng dẫn từng ca](POSTMAN-HUY-CHUYEN.md): Requested, Quoted, FindingDriver, quyền truy cập,
+hủy lặp không ghi trùng history và 409 ngoài phạm vi. Chạy riêng từng folder, không ghép vào luồng thanh toán.
+
 Chạy RabbitMQ, SQL Server, PostgreSQL, MongoDB, bốn service và Gateway. Áp dụng migrations và seed. `GET {{gatewayUrl}}/health` phải trả 200 với cả bốn service Healthy. Seed mặc định: Rider `0900000001` (ví 500.000), Rider `0900000002` (ví 20.000), Driver `0910000001`, mật khẩu `123456`. Sửa biến environment nếu dữ liệu khác. Gateway mặc định `http://localhost:5000`.
 
 Để cấp Admin thật, đặt `Identity__AdminBootstrap__Phone` và `Identity__AdminBootstrap__Password` (tối thiểu 12 ký tự) trong cấu hình bảo mật của Identity, rồi khởi động lại. Bootstrap tạo tài khoản một lần ở mọi môi trường sau migration; nếu số điện thoại đã thuộc Rider/Driver, startup từ chối nâng quyền. Sau khi tạo, bỏ hai biến bootstrap khỏi cấu hình và khởi động lại; tài khoản Admin đã lưu trong DB. Không commit mật khẩu vào Git. Tài khoản mẫu cũ `0990000000 / 123456`, nếu đã được tạo bởi phiên bản trước, sẽ bị vô hiệu hóa; có thể dùng cùng số điện thoại với mật khẩu bootstrap mới để thay thế. Nhập cùng số điện thoại/mật khẩu vào biến Postman `adminPhone` và `adminPassword` (secret), chạy `6.0 Login Admin`; response phải có `user.role = "Admin"` và script tự lưu `adminToken`. API đăng ký công khai vẫn chỉ nhận Rider/Driver.
@@ -59,7 +67,7 @@ Nếu `Payment__FakeCard__Enabled=false`, consumer không tạo Payment: Trip s�
 
 ## Lỗi, tắt service và idempotency
 
-- **Ví thiếu tiền:** đăng nhập Rider `0900000002`, tạo chuyến WALLET có `price` lớn hơn số dư rồi chạy từ 3.2. Poll đến Trip `PaymentFailed`, Payment `FAILED`. Không có khoản trừ ví. Kiểm giá trước confirm vì quy tắc giá có thể đổi.
+- **Ví thiếu tiền trước confirm:** tạo chuyến có giá lớn hơn số dư rồi confirm WALLET: 409 INSUFFICIENT_FUNDS, Trip vẫn Quoted, không phát yêu cầu tìm tài xế. Sau hạn 5 phút Trip tự Cancelled. Checkout sau dropoff vẫn có thể thất bại nếu số dư giảm sau khi confirm; đây là ca khác với thiếu tiền ngay từ đầu.
 - **Payment offline:** tắt Payment, giữ Trip/Matching/RabbitMQ chạy, dropoff. Trip ở `PaymentPending`; quá deadline Saga chuyển `PaymentUncertain`, Trip vẫn `PaymentPending`. Bật Payment lại và poll 5.1/5.2 đến kết quả đã xác minh. Timeout không tương đương thanh toán thất bại.
 - **Dropoff lặp:** gọi lại 4.6 cùng `tripId`, rồi xem 5.2. Không tạo payment thứ hai; `paymentId` giữ nguyên.
 - **Sai Driver:** bước 4.1 phải có offer đúng `tripId`. Collection không lấy offer khác để chạy tiếp; Driver không được mời phải bị từ chối.

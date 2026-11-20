@@ -35,6 +35,8 @@ public sealed class TripApiFactory : WebApplicationFactory<Program>
 
     public TripApiFactory()
     {
+        PaymentClient.Setup(p => p.GetRiderBalanceAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid id, CancellationToken _) => new WalletBalanceResponse(id, 100000m));
         Matching.Setup(m => m.GetQuoteAsync(It.IsAny<Guid>(), It.IsAny<GeoPointDto>(), It.IsAny<GeoPointDto>()))
             .ReturnsAsync(new QuoteResult("quote-test", 5, 10, "Standard", 50000m));
         Matching.Setup(m => m.MatchAsync(It.IsAny<MatchDriverRequest>()))

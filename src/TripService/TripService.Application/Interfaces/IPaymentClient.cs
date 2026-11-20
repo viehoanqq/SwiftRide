@@ -4,6 +4,7 @@ namespace TripService.Application.Interfaces;
 
 public interface IPaymentClient
 {
+    Task<WalletBalanceResponse> GetRiderBalanceAsync(Guid riderId, CancellationToken cancellationToken);
     // POST /payments: accept 201(new) and 200(replay). FAILED is a business result, not HTTP failure.
     // Timeout/5xx throw DownstreamException; they MUST NOT be converted into FAILED or null.
     Task<CreatePaymentResponse> CreateAsync(CreatePaymentRequest request, CancellationToken cancellationToken);

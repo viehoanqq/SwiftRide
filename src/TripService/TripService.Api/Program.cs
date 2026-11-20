@@ -16,8 +16,12 @@ builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 builder.Services.AddScoped<TripAppService>();
 builder.Services.AddScoped<ITripDriverWorkflow>(serviceProvider =>
     serviceProvider.GetRequiredService<TripAppService>());
-builder.Services.Configure<TripWorkflowOptions>(
-    builder.Configuration.GetSection(TripWorkflowOptions.SectionName));
+builder.Services.AddOptions<TripWorkflowOptions>()
+    .Bind(builder.Configuration.GetSection(TripWorkflowOptions.SectionName))
+    .Validate(o => o.QuoteConfirmationTimeoutSeconds is >= 1 and <= 86400 &&
+        o.QuoteExpiryPollSeconds is >= 1 and <= 300 && o.QuoteExpiryBatchSize is >= 1 and <= 500,
+        "Trip quote expiry configuration is invalid.")
+    .ValidateOnStart();
 builder.Services.AddSingleton(sp => sp.GetRequiredService<
     Microsoft.Extensions.Options.IOptions<TripWorkflowOptions>>().Value);
 

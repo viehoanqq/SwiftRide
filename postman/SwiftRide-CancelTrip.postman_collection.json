@@ -1,0 +1,1937 @@
+{
+  "info": {
+    "name": "SwiftRide - Rider Cancel Trip (run one folder at a time)",
+    "description": "Chạy riêng từng folder. 01 tự động Quoted + quyền + replay. 02 tắt Matching trước. Chạy 03 online, tắt Matching rồi chạy 04. 05 dùng chuyến hiện có. Xem POSTMAN-HUY-CHUYEN.md. Mỗi folder tự dừng Runner.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "gatewayUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "cancelRiderPhone",
+      "value": "0900000002",
+      "type": "string"
+    },
+    {
+      "key": "cancelRiderPassword",
+      "value": "123456",
+      "type": "string"
+    },
+    {
+      "key": "cancelOtherPhone",
+      "value": "0900000001",
+      "type": "string"
+    },
+    {
+      "key": "cancelOtherPassword",
+      "value": "123456",
+      "type": "string"
+    },
+    {
+      "key": "cancelDriverPhone",
+      "value": "0910000002",
+      "type": "string"
+    },
+    {
+      "key": "cancelDriverPassword",
+      "value": "123456",
+      "type": "string"
+    },
+    {
+      "key": "nonCancelableTripId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01. Quoted — tự động, quyền, State Pattern, hủy lặp",
+      "item": [
+        {
+          "name": "Login Rider",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{cancelRiderPhone}}\",\n  \"password\": \"{{cancelRiderPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset('cancelRiderToken'); pm.collectionVariables.unset('cancelRiderId');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const d=pm.response.json();",
+                  "pm.test('Đúng role và có token', () => { pm.expect(d.user.role).to.eql('Rider'); pm.expect(d.accessToken).to.be.a('string').and.not.empty; });",
+                  "if (d.user.role !== 'Rider' || !d.accessToken) pm.execution.setNextRequest(null);",
+                  "else {pm.collectionVariables.set('cancelRiderToken',d.accessToken); pm.collectionVariables.set('cancelRiderId',d.user.id);}",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Driver",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{cancelDriverPhone}}\",\n  \"password\": \"{{cancelDriverPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset('cancelDriverToken'); pm.collectionVariables.unset('cancelDriverId');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const d=pm.response.json();",
+                  "pm.test('Đúng role và có token', () => { pm.expect(d.user.role).to.eql('Driver'); pm.expect(d.accessToken).to.be.a('string').and.not.empty; });",
+                  "if (d.user.role !== 'Driver' || !d.accessToken) pm.execution.setNextRequest(null);",
+                  "else {pm.collectionVariables.set('cancelDriverToken',d.accessToken); pm.collectionVariables.set('cancelDriverId',d.user.id);}",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Driver Available gần điểm đón",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/availability/online",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelDriverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lat\": 10.7725,\n  \"lng\": 106.698\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "pm.test('Available',()=>pm.expect(pm.response.json().status).to.eql('Available')); if(pm.response.json().status!=='Available') pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tạo chuyến — 202 Requested",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pickup\": {\n    \"lat\": 10.7725,\n    \"lng\": 106.698,\n    \"address\": \"Chợ Bến Thành\"\n  },\n  \"dropoff\": {\n    \"lat\": 10.7798,\n    \"lng\": 106.699,\n    \"address\": \"Nhà thờ Đức Bà\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset('cancelTripId'); pm.collectionVariables.unset('cancelHistoryBefore'); pm.collectionVariables.unset('cancelHistoryAfter');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 202', () => pm.response.to.have.status(202));",
+                  "if (pm.response.code !== 202) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const d=pm.response.json();",
+                  "pm.test('Có tripId và Requested',()=>{pm.expect(d.tripId).to.be.a('string').and.not.empty;pm.expect(d.status).to.eql('Requested');});",
+                  "if(d.tripId && d.status==='Requested')pm.collectionVariables.set('cancelTripId',d.tripId);else pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Kiểm tra đúng trạng thái Quoted",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}",
+                  "if (pm.collectionVariables.get('cancelTripId')) {",
+                  "let ready=false; let last='';",
+                  "try {",
+                  "for(let i=0;i<30;i++) {",
+                  "const res=await pm.sendRequest({url:pm.variables.replaceIn('{{gatewayUrl}}')+'/trips/'+pm.collectionVariables.get('cancelTripId'),method:'GET',header:{Authorization:'Bearer '+pm.collectionVariables.get('cancelRiderToken')}});",
+                  "if(res.code!==200){last='HTTP '+res.code;break;}",
+                  "last=res.json().status;",
+                  "if(last==='Quoted'){ready=true;break;}",
+                  "if(last!=='Requested')break;",
+                  "await new Promise(resolve=>setTimeout(resolve,2000));",
+                  "}",
+                  "}catch(e){last=e.message;}",
+                  "pm.test('Chờ báo giá',()=>pm.expect(ready,last).to.eql(true));",
+                  "if(!ready){pm.execution.setNextRequest(null);pm.execution.skipRequest();}",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const trip=pm.response.json();",
+                  "const valid=trip.id===pm.collectionVariables.get('cancelTripId') && trip.status==='Quoted';",
+                  "pm.test('Đúng chuyến, đúng Quoted',()=>pm.expect(valid).to.eql(true));",
+                  "if(!valid)pm.execution.setNextRequest(null);",
+                  "else {pm.collectionVariables.set('cancelExpectedState','Quoted');pm.collectionVariables.set('cancelHistoryBefore',JSON.stringify(trip.history));}",
+                  "",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Other",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{cancelOtherPhone}}\",\n  \"password\": \"{{cancelOtherPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset('cancelOtherToken'); pm.collectionVariables.unset('cancelOtherId');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const d=pm.response.json();",
+                  "pm.test('Đúng role và có token', () => { pm.expect(d.user.role).to.eql('Rider'); pm.expect(d.accessToken).to.be.a('string').and.not.empty; });",
+                  "if (d.user.role !== 'Rider' || !d.accessToken) pm.execution.setNextRequest(null);",
+                  "else {pm.collectionVariables.set('cancelOtherToken',d.accessToken); pm.collectionVariables.set('cancelOtherId',d.user.id);}",
+                  "const different=d.user.id!==pm.collectionVariables.get('cancelRiderId'); pm.test('Rider khác chủ chuyến',()=>pm.expect(different).to.eql(true)); if(!different) pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rider khác — 403",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}/cancel",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelOtherToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "if (pm.response.code !== 403) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Driver — 403",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}/cancel",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelDriverToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));",
+                  "if (pm.response.code !== 403) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Không token — 401",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}/cancel",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));",
+                  "if (pm.response.code !== 401) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trip không tồn tại — 404",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips/{{$guid}}/cancel",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));",
+                  "if (pm.response.code !== 404) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Kiểm tra đúng trạng thái Quoted",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const trip=pm.response.json();",
+                  "const valid=trip.id===pm.collectionVariables.get('cancelTripId') && trip.status==='Quoted';",
+                  "pm.test('Đúng chuyến, đúng Quoted',()=>pm.expect(valid).to.eql(true));",
+                  "if(!valid)pm.execution.setNextRequest(null);",
+                  "else {pm.collectionVariables.set('cancelExpectedState','Quoted');pm.collectionVariables.set('cancelHistoryBefore',JSON.stringify(trip.history));}",
+                  "",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hủy chuyến — 200 Cancelled",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}/cancel",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "pm.test('Cancelled',()=>pm.expect(pm.response.json().status).to.eql('Cancelled'));if(pm.response.json().status!=='Cancelled')pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Xác minh State và history",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const trip=pm.response.json();",
+                  "const before=JSON.parse(pm.collectionVariables.get('cancelHistoryBefore'));",
+                  "pm.test('Đúng chuyến đã hủy',()=>{pm.expect(trip.id).to.eql(pm.collectionVariables.get('cancelTripId'));pm.expect(trip.status).to.eql('Cancelled');});",
+                  "pm.test('History chỉ thêm một lần Cancelled',()=>{",
+                  "pm.expect(trip.history.length).to.eql(before.length+1);",
+                  "pm.expect(trip.history.slice(0,before.length)).to.deep.eql(before);",
+                  "pm.expect(trip.history.at(-1).from).to.eql(pm.collectionVariables.get('cancelExpectedState'));",
+                  "pm.expect(trip.history.at(-1).to).to.eql('Cancelled');",
+                  "});",
+                  "if(pm.collectionVariables.get('cancelExpectedState')==='Quoted')pm.test('Fare bị từ chối qua State Pattern',()=>pm.expect(trip.fare.status).to.eql('Rejected'));",
+                  "pm.collectionVariables.set('cancelHistoryAfter',JSON.stringify(trip.history));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hủy lặp — 200, không thêm history",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}/cancel",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "pm.test('Cancelled',()=>pm.expect(pm.response.json().status).to.eql('Cancelled'));if(pm.response.json().status!=='Cancelled')pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Xác minh history sau hủy lặp",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const trip=pm.response.json();",
+                  "const before=JSON.parse(pm.collectionVariables.get('cancelHistoryBefore'));",
+                  "pm.test('Đúng chuyến đã hủy',()=>{pm.expect(trip.id).to.eql(pm.collectionVariables.get('cancelTripId'));pm.expect(trip.status).to.eql('Cancelled');});",
+                  "pm.test('History chỉ thêm một lần Cancelled',()=>{",
+                  "pm.expect(trip.history.length).to.eql(before.length+1);",
+                  "pm.expect(trip.history.slice(0,before.length)).to.deep.eql(before);",
+                  "pm.expect(trip.history.at(-1).from).to.eql(pm.collectionVariables.get('cancelExpectedState'));",
+                  "pm.expect(trip.history.at(-1).to).to.eql('Cancelled');",
+                  "});",
+                  "if(pm.collectionVariables.get('cancelExpectedState')==='Quoted')pm.test('Fare bị từ chối qua State Pattern',()=>pm.expect(trip.fare.status).to.eql('Rejected'));",
+                  "pm.test('Replay không đổi history',()=>pm.expect(trip.history).to.deep.eql(JSON.parse(pm.collectionVariables.get('cancelHistoryAfter'))));",
+                  "pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02. Requested — TẮT Matching trước khi chạy",
+      "item": [
+        {
+          "name": "Login Rider",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{cancelRiderPhone}}\",\n  \"password\": \"{{cancelRiderPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset('cancelRiderToken'); pm.collectionVariables.unset('cancelRiderId');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const d=pm.response.json();",
+                  "pm.test('Đúng role và có token', () => { pm.expect(d.user.role).to.eql('Rider'); pm.expect(d.accessToken).to.be.a('string').and.not.empty; });",
+                  "if (d.user.role !== 'Rider' || !d.accessToken) pm.execution.setNextRequest(null);",
+                  "else {pm.collectionVariables.set('cancelRiderToken',d.accessToken); pm.collectionVariables.set('cancelRiderId',d.user.id);}",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tạo chuyến — 202 Requested",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pickup\": {\n    \"lat\": 10.7725,\n    \"lng\": 106.698,\n    \"address\": \"Chợ Bến Thành\"\n  },\n  \"dropoff\": {\n    \"lat\": 10.7798,\n    \"lng\": 106.699,\n    \"address\": \"Nhà thờ Đức Bà\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset('cancelTripId'); pm.collectionVariables.unset('cancelHistoryBefore'); pm.collectionVariables.unset('cancelHistoryAfter');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 202', () => pm.response.to.have.status(202));",
+                  "if (pm.response.code !== 202) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const d=pm.response.json();",
+                  "pm.test('Có tripId và Requested',()=>{pm.expect(d.tripId).to.be.a('string').and.not.empty;pm.expect(d.status).to.eql('Requested');});",
+                  "if(d.tripId && d.status==='Requested')pm.collectionVariables.set('cancelTripId',d.tripId);else pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Kiểm tra đúng trạng thái Requested",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const trip=pm.response.json();",
+                  "const valid=trip.id===pm.collectionVariables.get('cancelTripId') && trip.status==='Requested';",
+                  "pm.test('Đúng chuyến, đúng Requested',()=>pm.expect(valid).to.eql(true));",
+                  "if(!valid)pm.execution.setNextRequest(null);",
+                  "else {pm.collectionVariables.set('cancelExpectedState','Requested');pm.collectionVariables.set('cancelHistoryBefore',JSON.stringify(trip.history));}",
+                  "",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hủy chuyến — 200 Cancelled",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}/cancel",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "pm.test('Cancelled',()=>pm.expect(pm.response.json().status).to.eql('Cancelled'));if(pm.response.json().status!=='Cancelled')pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Xác minh State và history",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const trip=pm.response.json();",
+                  "const before=JSON.parse(pm.collectionVariables.get('cancelHistoryBefore'));",
+                  "pm.test('Đúng chuyến đã hủy',()=>{pm.expect(trip.id).to.eql(pm.collectionVariables.get('cancelTripId'));pm.expect(trip.status).to.eql('Cancelled');});",
+                  "pm.test('History chỉ thêm một lần Cancelled',()=>{",
+                  "pm.expect(trip.history.length).to.eql(before.length+1);",
+                  "pm.expect(trip.history.slice(0,before.length)).to.deep.eql(before);",
+                  "pm.expect(trip.history.at(-1).from).to.eql(pm.collectionVariables.get('cancelExpectedState'));",
+                  "pm.expect(trip.history.at(-1).to).to.eql('Cancelled');",
+                  "});",
+                  "if(pm.collectionVariables.get('cancelExpectedState')==='Quoted')pm.test('Fare bị từ chối qua State Pattern',()=>pm.expect(trip.fare.status).to.eql('Rejected'));",
+                  "pm.collectionVariables.set('cancelHistoryAfter',JSON.stringify(trip.history));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hủy lặp — 200, không thêm history",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}/cancel",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "pm.test('Cancelled',()=>pm.expect(pm.response.json().status).to.eql('Cancelled'));if(pm.response.json().status!=='Cancelled')pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Xác minh history sau hủy lặp",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const trip=pm.response.json();",
+                  "const before=JSON.parse(pm.collectionVariables.get('cancelHistoryBefore'));",
+                  "pm.test('Đúng chuyến đã hủy',()=>{pm.expect(trip.id).to.eql(pm.collectionVariables.get('cancelTripId'));pm.expect(trip.status).to.eql('Cancelled');});",
+                  "pm.test('History chỉ thêm một lần Cancelled',()=>{",
+                  "pm.expect(trip.history.length).to.eql(before.length+1);",
+                  "pm.expect(trip.history.slice(0,before.length)).to.deep.eql(before);",
+                  "pm.expect(trip.history.at(-1).from).to.eql(pm.collectionVariables.get('cancelExpectedState'));",
+                  "pm.expect(trip.history.at(-1).to).to.eql('Cancelled');",
+                  "});",
+                  "if(pm.collectionVariables.get('cancelExpectedState')==='Quoted')pm.test('Fare bị từ chối qua State Pattern',()=>pm.expect(trip.fare.status).to.eql('Rejected'));",
+                  "pm.test('Replay không đổi history',()=>pm.expect(trip.history).to.deep.eql(JSON.parse(pm.collectionVariables.get('cancelHistoryAfter'))));",
+                  "pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03. Chuẩn bị FindingDriver — Matching ONLINE",
+      "item": [
+        {
+          "name": "Login Rider",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{cancelRiderPhone}}\",\n  \"password\": \"{{cancelRiderPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset('cancelRiderToken'); pm.collectionVariables.unset('cancelRiderId');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const d=pm.response.json();",
+                  "pm.test('Đúng role và có token', () => { pm.expect(d.user.role).to.eql('Rider'); pm.expect(d.accessToken).to.be.a('string').and.not.empty; });",
+                  "if (d.user.role !== 'Rider' || !d.accessToken) pm.execution.setNextRequest(null);",
+                  "else {pm.collectionVariables.set('cancelRiderToken',d.accessToken); pm.collectionVariables.set('cancelRiderId',d.user.id);}",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Driver",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{cancelDriverPhone}}\",\n  \"password\": \"{{cancelDriverPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset('cancelDriverToken'); pm.collectionVariables.unset('cancelDriverId');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const d=pm.response.json();",
+                  "pm.test('Đúng role và có token', () => { pm.expect(d.user.role).to.eql('Driver'); pm.expect(d.accessToken).to.be.a('string').and.not.empty; });",
+                  "if (d.user.role !== 'Driver' || !d.accessToken) pm.execution.setNextRequest(null);",
+                  "else {pm.collectionVariables.set('cancelDriverToken',d.accessToken); pm.collectionVariables.set('cancelDriverId',d.user.id);}",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Driver Available gần điểm đón",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/availability/online",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelDriverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lat\": 10.7725,\n  \"lng\": 106.698\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "pm.test('Available',()=>pm.expect(pm.response.json().status).to.eql('Available')); if(pm.response.json().status!=='Available') pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tạo chuyến — 202 Requested",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pickup\": {\n    \"lat\": 10.7725,\n    \"lng\": 106.698,\n    \"address\": \"Chợ Bến Thành\"\n  },\n  \"dropoff\": {\n    \"lat\": 10.7798,\n    \"lng\": 106.699,\n    \"address\": \"Nhà thờ Đức Bà\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset('cancelTripId'); pm.collectionVariables.unset('cancelHistoryBefore'); pm.collectionVariables.unset('cancelHistoryAfter');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 202', () => pm.response.to.have.status(202));",
+                  "if (pm.response.code !== 202) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const d=pm.response.json();",
+                  "pm.test('Có tripId và Requested',()=>{pm.expect(d.tripId).to.be.a('string').and.not.empty;pm.expect(d.status).to.eql('Requested');});",
+                  "if(d.tripId && d.status==='Requested')pm.collectionVariables.set('cancelTripId',d.tripId);else pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Kiểm tra đúng trạng thái Quoted",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}",
+                  "if (pm.collectionVariables.get('cancelTripId')) {",
+                  "let ready=false; let last='';",
+                  "try {",
+                  "for(let i=0;i<30;i++) {",
+                  "const res=await pm.sendRequest({url:pm.variables.replaceIn('{{gatewayUrl}}')+'/trips/'+pm.collectionVariables.get('cancelTripId'),method:'GET',header:{Authorization:'Bearer '+pm.collectionVariables.get('cancelRiderToken')}});",
+                  "if(res.code!==200){last='HTTP '+res.code;break;}",
+                  "last=res.json().status;",
+                  "if(last==='Quoted'){ready=true;break;}",
+                  "if(last!=='Requested')break;",
+                  "await new Promise(resolve=>setTimeout(resolve,2000));",
+                  "}",
+                  "}catch(e){last=e.message;}",
+                  "pm.test('Chờ báo giá',()=>pm.expect(ready,last).to.eql(true));",
+                  "if(!ready){pm.execution.setNextRequest(null);pm.execution.skipRequest();}",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const trip=pm.response.json();",
+                  "const valid=trip.id===pm.collectionVariables.get('cancelTripId') && trip.status==='Quoted';",
+                  "pm.test('Đúng chuyến, đúng Quoted',()=>pm.expect(valid).to.eql(true));",
+                  "if(!valid)pm.execution.setNextRequest(null);",
+                  "else {pm.collectionVariables.set('cancelExpectedState','Quoted');pm.collectionVariables.set('cancelHistoryBefore',JSON.stringify(trip.history));}",
+                  "pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04. FindingDriver — TẮT Matching sau folder 03",
+      "item": [
+        {
+          "name": "Kiểm tra đúng trạng thái Quoted",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const trip=pm.response.json();",
+                  "const valid=trip.id===pm.collectionVariables.get('cancelTripId') && trip.status==='Quoted';",
+                  "pm.test('Đúng chuyến, đúng Quoted',()=>pm.expect(valid).to.eql(true));",
+                  "if(!valid)pm.execution.setNextRequest(null);",
+                  "else {pm.collectionVariables.set('cancelExpectedState','Quoted');pm.collectionVariables.set('cancelHistoryBefore',JSON.stringify(trip.history));}",
+                  "",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Confirm khi Matching đã tắt — 202 FindingDriver",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}/confirm",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accept\": true,\n  \"paymentMethod\": \"WALLET\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 202', () => pm.response.to.have.status(202));",
+                  "if (pm.response.code !== 202) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "pm.test('FindingDriver',()=>pm.expect(pm.response.json().status).to.eql('FindingDriver'));if(pm.response.json().status!=='FindingDriver')pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Kiểm tra đúng trạng thái FindingDriver",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const trip=pm.response.json();",
+                  "const valid=trip.id===pm.collectionVariables.get('cancelTripId') && trip.status==='FindingDriver';",
+                  "pm.test('Đúng chuyến, đúng FindingDriver',()=>pm.expect(valid).to.eql(true));",
+                  "if(!valid)pm.execution.setNextRequest(null);",
+                  "else {pm.collectionVariables.set('cancelExpectedState','FindingDriver');pm.collectionVariables.set('cancelHistoryBefore',JSON.stringify(trip.history));}",
+                  "",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hủy chuyến — 200 Cancelled",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}/cancel",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "pm.test('Cancelled',()=>pm.expect(pm.response.json().status).to.eql('Cancelled'));if(pm.response.json().status!=='Cancelled')pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Xác minh State và history",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const trip=pm.response.json();",
+                  "const before=JSON.parse(pm.collectionVariables.get('cancelHistoryBefore'));",
+                  "pm.test('Đúng chuyến đã hủy',()=>{pm.expect(trip.id).to.eql(pm.collectionVariables.get('cancelTripId'));pm.expect(trip.status).to.eql('Cancelled');});",
+                  "pm.test('History chỉ thêm một lần Cancelled',()=>{",
+                  "pm.expect(trip.history.length).to.eql(before.length+1);",
+                  "pm.expect(trip.history.slice(0,before.length)).to.deep.eql(before);",
+                  "pm.expect(trip.history.at(-1).from).to.eql(pm.collectionVariables.get('cancelExpectedState'));",
+                  "pm.expect(trip.history.at(-1).to).to.eql('Cancelled');",
+                  "});",
+                  "if(pm.collectionVariables.get('cancelExpectedState')==='Quoted')pm.test('Fare bị từ chối qua State Pattern',()=>pm.expect(trip.fare.status).to.eql('Rejected'));",
+                  "pm.collectionVariables.set('cancelHistoryAfter',JSON.stringify(trip.history));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hủy lặp — 200, không thêm history",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}/cancel",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "pm.test('Cancelled',()=>pm.expect(pm.response.json().status).to.eql('Cancelled'));if(pm.response.json().status!=='Cancelled')pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Xác minh history sau hủy lặp",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{cancelTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cancelTripId')) {",
+                  "pm.test('Có cancelTripId',()=>pm.expect.fail('Cần chạy bước tạo chuyến trước'));",
+                  "pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const trip=pm.response.json();",
+                  "const before=JSON.parse(pm.collectionVariables.get('cancelHistoryBefore'));",
+                  "pm.test('Đúng chuyến đã hủy',()=>{pm.expect(trip.id).to.eql(pm.collectionVariables.get('cancelTripId'));pm.expect(trip.status).to.eql('Cancelled');});",
+                  "pm.test('History chỉ thêm một lần Cancelled',()=>{",
+                  "pm.expect(trip.history.length).to.eql(before.length+1);",
+                  "pm.expect(trip.history.slice(0,before.length)).to.deep.eql(before);",
+                  "pm.expect(trip.history.at(-1).from).to.eql(pm.collectionVariables.get('cancelExpectedState'));",
+                  "pm.expect(trip.history.at(-1).to).to.eql('Cancelled');",
+                  "});",
+                  "if(pm.collectionVariables.get('cancelExpectedState')==='Quoted')pm.test('Fare bị từ chối qua State Pattern',()=>pm.expect(trip.fare.status).to.eql('Rejected'));",
+                  "pm.test('Replay không đổi history',()=>pm.expect(trip.history).to.deep.eql(JSON.parse(pm.collectionVariables.get('cancelHistoryAfter'))));",
+                  "pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05. Trạng thái không cho hủy — chuyến hiện có",
+      "item": [
+        {
+          "name": "Login Rider",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{cancelRiderPhone}}\",\n  \"password\": \"{{cancelRiderPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.unset('cancelRiderToken'); pm.collectionVariables.unset('cancelRiderId');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const d=pm.response.json();",
+                  "pm.test('Đúng role và có token', () => { pm.expect(d.user.role).to.eql('Rider'); pm.expect(d.accessToken).to.be.a('string').and.not.empty; });",
+                  "if (d.user.role !== 'Rider' || !d.accessToken) pm.execution.setNextRequest(null);",
+                  "else {pm.collectionVariables.set('cancelRiderToken',d.accessToken); pm.collectionVariables.set('cancelRiderId',d.user.id);}",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chụp trạng thái chuyến hiện có",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{nonCancelableTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.variables.get('nonCancelableTripId')){",
+                  "pm.test('Có nonCancelableTripId',()=>pm.expect.fail('Nhập ID chuyến không được phép hủy, thuộc cancelRiderPhone'));",
+                  "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const d=pm.response.json();",
+                  "const valid=['DriverOffered','DriverAccepted','EnRoute','PickedUp','DroppedOff','PaymentPending','Paid','Failed','PaymentFailed','RefundPending','Refunded','RefundNeedsAttention'].includes(d.status);",
+                  "pm.test('Ngoài phạm vi được hủy',()=>pm.expect(valid).to.eql(true));",
+                  "if(!valid)pm.execution.setNextRequest(null);else pm.collectionVariables.set('cancelRestrictedBefore',JSON.stringify({status:d.status,history:d.history}));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Không được hủy — 409",
+          "request": {
+            "method": "POST",
+            "url": "{{gatewayUrl}}/trips/{{nonCancelableTripId}}/cancel",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.variables.get('nonCancelableTripId')){",
+                  "pm.test('Có nonCancelableTripId',()=>pm.expect.fail('Nhập ID chuyến không được phép hủy, thuộc cancelRiderPhone'));",
+                  "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+                  "if (pm.response.code !== 409) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "State/history không đổi sau 409",
+          "request": {
+            "method": "GET",
+            "url": "{{gatewayUrl}}/trips/{{nonCancelableTripId}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{cancelRiderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if(!pm.variables.get('nonCancelableTripId')){",
+                  "pm.test('Có nonCancelableTripId',()=>pm.expect.fail('Nhập ID chuyến không được phép hủy, thuộc cancelRiderPhone'));",
+                  "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code !== 200) pm.execution.setNextRequest(null);",
+                  "else {",
+                  "const d=pm.response.json();",
+                  "pm.test('State/history không đổi',()=>pm.expect({status:d.status,history:d.history}).to.deep.eql(JSON.parse(pm.collectionVariables.get('cancelRestrictedBefore'))));",
+                  "pm.execution.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

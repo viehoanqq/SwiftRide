@@ -62,7 +62,7 @@ public sealed class TripQuoteResultHandler(TripDbContext db)
                     QuoteId = calculated.QuoteId, Price = calculated.Price,
                     DistanceKm = calculated.DistanceKm, DurationMin = calculated.DurationMin,
                     Strategy = calculated.Strategy, Status = FareStatus.Pending,
-                    QuotedAt = calculated.OccurredAt
+                    QuotedAt = DateTime.UtcNow // Confirmation window starts when Trip accepts the quote.
                 });
                 db.TripFares.Add(trip.Fare!);
             }

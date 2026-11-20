@@ -11,6 +11,24 @@ public sealed class PaymentClient(HttpClient httpClient) : IPaymentClient
 {
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(3);
 
+    public async Task<WalletBalanceResponse> GetRiderBalanceAsync(Guid riderId, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/internal/wallets/{riderId:D}/balance");
+        return await SendAsync(request, cancellationToken, async (response, ct) =>
+        {
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                throw new ConflictException("WALLET_NOT_READY", "Ví chưa sẵn sàng. Vui lòng thử lại sau.");
+            if (response.StatusCode != HttpStatusCode.OK)
+                throw new DownstreamException(502, PaymentErrorCodes.PaymentUnavailable,
+                    "Chưa thể kiểm tra số dư ví. Vui lòng thử lại sau.");
+            var balance = await response.Content.ReadFromJsonAsync<WalletBalanceResponse>(cancellationToken: ct);
+            if (balance is null || balance.RiderId != riderId || balance.Balance < 0)
+                throw new DownstreamException(502, PaymentErrorCodes.InvalidPaymentResponse,
+                    "Payment trả về số dư ví không hợp lệ.");
+            return balance;
+        });
+    }
+
     public async Task<CreatePaymentResponse> CreateAsync(
         CreatePaymentRequest request,
         CancellationToken cancellationToken)

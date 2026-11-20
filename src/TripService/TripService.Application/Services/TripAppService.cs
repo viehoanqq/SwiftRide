@@ -16,7 +16,8 @@ namespace TripService.Application.Services;
 public class TripAppService(ITripRepository trips,
     IDriverStatusClient driverStatusClient,
     TripWorkflowOptions? workflowOptions = null,
-    IPaymentSagaRepository? paymentSagas = null) : ITripDriverWorkflow
+    IPaymentSagaRepository? paymentSagas = null,
+    IPaymentClient? paymentClient = null) : ITripDriverWorkflow
 {
     // Requested + QuoteRequested commit together; Matching returns the quote asynchronously.
     public async Task<CreateTripResponse> CreateAsync(Guid riderId, CreateTripRequest request)
@@ -70,7 +71,8 @@ public class TripAppService(ITripRepository trips,
     }
 
     // ĐẠT: accept → Fare Accepted + PaymentMethod; từ chối → Cancelled. Chỉ rider của chuyến
-    public async Task<ConfirmTripResponse> ConfirmAsync(Guid tripId, Guid riderId, ConfirmTripRequest request)
+    public async Task<ConfirmTripResponse> ConfirmAsync(Guid tripId, Guid riderId, ConfirmTripRequest request,
+        CancellationToken cancellationToken = default)
     {
         // Keep legacy accept=false callers on the same authorized cancellation path.
         if (!request.Accept)
@@ -93,6 +95,8 @@ public class TripAppService(ITripRepository trips,
                 $"INVALID_TRIP_STATE: Không thể xác nhận hoặc từ chối chuyến đi khi đang ở trạng thái '{trip.Status}'.");
         }
 
+        await EnsureQuoteNotExpiredAsync(trip);
+
         if (string.IsNullOrWhiteSpace(request.PaymentMethod))
         {
             throw new ValidationException("Phương thức thanh toán là bắt buộc khi chấp nhận chuyến đi.");
@@ -110,6 +114,18 @@ public class TripAppService(ITripRepository trips,
             throw new ValidationException("CARD yêu cầu CardToken hợp lệ (tối đa 100 ký tự).");
         if (paymentMethod == PaymentMethod.Wallet && request.CardToken is not null)
             throw new ValidationException("WALLET không nhận CardToken.");
+
+        if (paymentMethod == PaymentMethod.Wallet)
+        {
+            if (paymentClient is null)
+                throw new DownstreamException(503, PaymentErrorCodes.PaymentUnavailable, "Chưa cấu hình kiểm tra ví.");
+            var wallet = await paymentClient.GetRiderBalanceAsync(trip.RiderId, cancellationToken);
+            // The HTTP read may have crossed the deadline; check again before modifying the fare.
+            await EnsureQuoteNotExpiredAsync(trip);
+            if (wallet.Balance < trip.Fare!.Price)
+                throw new ConflictException(PaymentFailureReasons.InsufficientFunds,
+                    "Số dư ví không đủ để xác nhận chuyến đi. Vui lòng nạp tiền hoặc chọn CARD.");
+        }
 
         trip.Confirm(paymentMethod);
         trip.Fare!.CardToken = request.CardToken;
@@ -232,6 +248,15 @@ public class TripAppService(ITripRepository trips,
         }
         await trips.SaveChangesAsync();
         return new TripDriverActionResponse(trip.Status.ToString());
+    }
+
+    private async Task EnsureQuoteNotExpiredAsync(Trip trip)
+    {
+        var timeout = workflowOptions?.QuoteConfirmationTimeoutSeconds ?? 300;
+        if (trip.Fare is null || trip.Fare.QuotedAt.AddSeconds(timeout) > DateTime.UtcNow) return;
+        trip.Cancel();
+        await trips.SaveChangesAsync();
+        throw new ConflictException("QUOTE_EXPIRED", "Báo giá đã hết hạn, chuyến đã được hủy. Vui lòng tạo chuyến mới.");
     }
 
     private void RequestMatch(Trip trip)
