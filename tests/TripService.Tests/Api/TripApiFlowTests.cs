@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -20,18 +20,27 @@ public class TripApiFlowTests
     private static CreateTripRequest Request => new(
         new LocationDto(10.77, 106.69, "Pickup"), new LocationDto(10.78, 106.70, "Dropoff"));
 
-    private static async Task<Guid> Create(HttpClient rider)
+    private static async Task<Guid> Create(TripApiFactory app, HttpClient rider)
     {
         using var response = await rider.PostAsJsonAsync("/trips", Request);
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         var body = (await response.Content.ReadFromJsonAsync<CreateTripResponse>())!;
         Assert.EndsWith($"/trips/{body.TripId}", response.Headers.Location!.ToString());
+        Assert.Equal("Requested", body.Status);
+        Assert.Null(body.Price);
+        // Simulate the asynchronous result for HTTP workflow tests.
+        // This helper does not exercise the message consumer or its persistence.
+        app.Store.Committed[body.TripId].MarkQuoted(new TripService.Domain.Entities.TripFare
+        {
+            QuoteId = "quote-test", Price = 50000m, DistanceKm = 5, DurationMin = 10,
+            Strategy = "Standard", Status = FareStatus.Pending, QuotedAt = DateTime.UtcNow
+        });
         return body.TripId;
     }
 
     private static async Task<Guid> Offer(TripApiFactory factory, HttpClient rider)
     {
-        var id = await Create(rider);
+        var id = await Create(factory, rider);
         using var response = await rider.PostAsJsonAsync($"/trips/{id}/confirm", new { accept = true, paymentMethod = "WALLET" });
         await AssertState(response, "DriverOffered");
         return id;
@@ -57,7 +66,7 @@ public class TripApiFlowTests
         using var app = new TripApiFactory();
         using var rider = app.Client(app.Rider, "Rider");
         using var driver = app.Client(app.Driver, "Driver");
-        var id = await Create(rider);
+        var id = await Create(app, rider);
         await AssertState(await rider.PostAsJsonAsync($"/trips/{id}/confirm",
             new { accept = true, paymentMethod = "CARD", cardToken = "test-card-approved" }), "DriverOffered");
         await AssertState(await driver.PostAsync($"/trips/{id}/driver-accept", null), "DriverAccepted");
@@ -151,7 +160,7 @@ public class TripApiFlowTests
     {
         using var app = new TripApiFactory();
         using var rider = app.Client(app.Rider, "Rider");
-        var id = await Create(rider);
+        var id = await Create(app, rider);
         await AssertState(await rider.PostAsJsonAsync($"/trips/{id}/confirm", new { accept = false }), "Cancelled");
         Assert.Equal(HttpStatusCode.NoContent, (await rider.GetAsync("/trips/me/current")).StatusCode);
         app.Matching.Verify(c => c.MatchAsync(It.IsAny<MatchDriverRequest>()), Times.Never);
@@ -225,7 +234,7 @@ public class TripApiFlowTests
         var invalid = Request with { Pickup = new LocationDto(100, 106, "Invalid") };
         await Error(await rider.PostAsJsonAsync("/trips", invalid), HttpStatusCode.BadRequest, "VALIDATION_ERROR");
         Assert.Equal(HttpStatusCode.BadRequest, (await rider.PostAsync("/trips", new StringContent("{", System.Text.Encoding.UTF8, "application/json"))).StatusCode);
-        var id = await Create(rider);
+        var id = await Create(app, rider);
         await Error(await rider.PostAsJsonAsync("/trips", Request), HttpStatusCode.Conflict, "ACTIVE_TRIP_EXISTS");
         await Error(await rider.PostAsJsonAsync($"/trips/{id}/confirm", new { accept = true, paymentMethod = "CASH" }), HttpStatusCode.BadRequest, "VALIDATION_ERROR");
         await Error(await stranger.PostAsJsonAsync($"/trips/{id}/confirm", new { accept = false }), HttpStatusCode.Forbidden, "FORBIDDEN");
@@ -278,29 +287,19 @@ public class TripApiFlowTests
         await Error(await badSubject.GetAsync("/drivers/me/offers"), HttpStatusCode.Unauthorized, "INVALID_TOKEN_SUBJECT");
     }
 
-    [Theory]
-    [InlineData("quote")]
-    [InlineData("confirm")]
-    public async Task NoDriverDuringQuoteOrConfirm_ReturnsFailed(string stage)
+    [Fact]
+    public async Task NoDriverDuringConfirm_ReturnsFailed()
     {
         using var app = new TripApiFactory();
         using var rider = app.Client(app.Rider, "Rider");
-        if (stage == "quote")
-            app.Matching.Setup(c => c.GetQuoteAsync(It.IsAny<Guid>(), It.IsAny<GeoPointDto>(), It.IsAny<GeoPointDto>()))
-                .ReturnsAsync((QuoteResult?)null);
-        else
-            app.Matching.Setup(c => c.MatchAsync(It.IsAny<MatchDriverRequest>())).ReturnsAsync((MatchDriverResult?)null);
-        var id = await Create(rider);
-        if (stage == "confirm")
-            await AssertState(await rider.PostAsJsonAsync($"/trips/{id}/confirm",
-                new { accept = true, paymentMethod = "CARD", cardToken = "test-card-approved" }), "Failed");
+        app.Matching.Setup(c => c.MatchAsync(It.IsAny<MatchDriverRequest>())).ReturnsAsync((MatchDriverResult?)null);
+        var id = await Create(app, rider);
+        await AssertState(await rider.PostAsJsonAsync($"/trips/{id}/confirm",
+            new { accept = true, paymentMethod = "WALLET" }), "Failed");
         Assert.Equal(TripStatus.Failed, app.Store.Committed[id].Status);
-        Assert.Equal(HttpStatusCode.NoContent, (await rider.GetAsync("/trips/me/current")).StatusCode);
     }
 
     [Theory]
-    [InlineData("quote", 502)]
-    [InlineData("quote", 504)]
     [InlineData("confirm", 502)]
     [InlineData("confirm", 504)]
     [InlineData("reject", 502)]
@@ -310,15 +309,12 @@ public class TripApiFlowTests
         using var app = new TripApiFactory();
         using var rider = app.Client(app.Rider, "Rider");
         using var driver = app.Client(app.Driver, "Driver");
-        var id = stage == "quote" ? Guid.Empty : stage == "confirm" ? await Create(rider) : await Offer(app, rider);
+        var id = stage == "confirm" ? await Create(app, rider) : await Offer(app, rider);
         var before = JsonSerializer.Serialize(app.Store.Committed);
         var exception = new DownstreamException(status, "MATCHING_FAILURE", "Test failure");
-        if (stage == "quote")
-            app.Matching.Setup(c => c.GetQuoteAsync(It.IsAny<Guid>(), It.IsAny<GeoPointDto>(), It.IsAny<GeoPointDto>())).ThrowsAsync(exception);
-        else app.Matching.Setup(c => c.MatchAsync(It.IsAny<MatchDriverRequest>())).ThrowsAsync(exception);
+        app.Matching.Setup(c => c.MatchAsync(It.IsAny<MatchDriverRequest>())).ThrowsAsync(exception);
         using var response = stage switch
         {
-            "quote" => await rider.PostAsJsonAsync("/trips", Request),
             "confirm" => await rider.PostAsJsonAsync($"/trips/{id}/confirm", new { accept = true, paymentMethod = "WALLET" }),
             _ => await driver.PostAsync($"/trips/{id}/driver-reject", null)
         };

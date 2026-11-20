@@ -50,6 +50,9 @@ public sealed class TripOutboxPublisher(
             {
                 switch (message.Type)
                 {
+                    case nameof(QuoteRequested):
+                        await publisher.Publish(Deserialize<QuoteRequested>(message), cancellationToken);
+                        break;
                     case nameof(TripAccepted):
                         await publisher.Publish(Deserialize<TripAccepted>(message), cancellationToken);
                         break;

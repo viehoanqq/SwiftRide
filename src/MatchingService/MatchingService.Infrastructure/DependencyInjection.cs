@@ -6,6 +6,7 @@ using MatchingService.Infrastructure.Mongo;
 using MatchingService.Infrastructure.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using SwiftRide.Contracts.Events;
 
 namespace MatchingService.Infrastructure;
@@ -22,6 +23,8 @@ public static class DependencyInjection
         services.AddSwiftRideMessaging(configuration, environment,
             configureConsumers: bus =>
             {
+                bus.AddConsumer<QuoteRequestedConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.MatchingQuoteRequested);
                 bus.AddConsumer<DriverRegisteredConsumer>()
                     .Endpoint(endpoint => endpoint.Name = QueueNames.MatchingDriverRegistered);
                 bus.AddConsumer<TripAcceptedConsumer>()
@@ -29,6 +32,8 @@ public static class DependencyInjection
                 bus.AddConsumer<TripClosedConsumer>()
                     .Endpoint(endpoint => endpoint.Name = QueueNames.MatchingTripClosed);
             });
+        if (environment?.IsEnvironment("Testing") != true)
+            services.AddHostedService<QuoteOutboxPublisher>();
         return services;
     }
     public static async Task InitializeDatabaseAsync(this IServiceProvider services)

@@ -25,13 +25,21 @@ public class MongoContext
         var database = new MongoClient(url).GetDatabase(url.DatabaseName ?? "MatchDb");
         Drivers = database.GetCollection<DriverDocument>("drivers");
         Quotes = database.GetCollection<QuoteDocument>("quotes");
+        QuoteResults = database.GetCollection<QuoteResultDocument>("quoteResults");
     }
 
     public IMongoCollection<DriverDocument> Drivers { get; }
     public IMongoCollection<QuoteDocument> Quotes { get; }
+    public IMongoCollection<QuoteResultDocument> QuoteResults { get; }
 
     public async Task EnsureIndexesAsync()
     {
+        await QuoteResults.Indexes.CreateManyAsync(
+        [
+            new CreateIndexModel<QuoteResultDocument>(Builders<QuoteResultDocument>.IndexKeys
+                .Ascending(x => x.PublishedAt).Ascending(x => x.ClaimedUntil).Ascending(x => x.CreatedAt)),
+            new CreateIndexModel<QuoteResultDocument>(Builders<QuoteResultDocument>.IndexKeys.Ascending(x => x.TripId))
+        ]);
         await Drivers.Indexes.CreateManyAsync(
         [
             new CreateIndexModel<DriverDocument>(Builders<DriverDocument>.IndexKeys.Geo2DSphere(d => d.Location)),

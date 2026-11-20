@@ -18,7 +18,7 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
     TripWorkflowOptions? workflowOptions = null,
     IPaymentSagaRepository? paymentSagas = null) : ITripDriverWorkflow
 {
-    // MINH: tạo chuyến → /quote → Quoted hoặc Failed. 409 nếu đang có chuyến chưa kết thúc
+    // Requested + QuoteRequested commit together; Matching returns the quote asynchronously.
     public async Task<CreateTripResponse> CreateAsync(Guid riderId, CreateTripRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -46,28 +46,9 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
                 DropoffAddress = dropoff.Address.Trim()
             });
 
-        var quote = await matching.GetQuoteAsync(
-            trip.Id,
-            new GeoPointDto(pickup.Lat, pickup.Lng),
-            new GeoPointDto(dropoff.Lat, dropoff.Lng));
-
-        if (quote is null)
-        {
-            trip.MarkFailed();
-        }
-        else
-        {
-            trip.MarkQuoted(new TripFare
-            {
-                QuoteId = quote.QuoteId,
-                Price = quote.Price,
-                DistanceKm = quote.DistanceKm,
-                DurationMin = quote.DurationMin,
-                Strategy = quote.Strategy,
-                Status = FareStatus.Pending,
-                QuotedAt = DateTime.UtcNow
-            });
-        }
+        trips.AddOutboxEvent(new QuoteRequested(
+            Guid.NewGuid(), trip.Id, null, DateTime.UtcNow, trip.Id,
+            pickup.Lat, pickup.Lng, dropoff.Lat, dropoff.Lng));
 
         await trips.AddAsync(trip);
         await trips.SaveChangesAsync();
@@ -102,7 +83,7 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
             throw new ForbiddenException("FORBIDDEN", "Bạn không có quyền thao tác trên chuyến đi này.");
         }
 
-        if (trip.Status != TripStatus.Quoted)
+        if (trip.Status != TripStatus.Quoted && !(trip.Status == TripStatus.Requested && !request.Accept))
         {
             throw new InvalidTripStateException(
                 $"INVALID_TRIP_STATE: Không thể xác nhận hoặc từ chối chuyến đi khi đang ở trạng thái '{trip.Status}'.");

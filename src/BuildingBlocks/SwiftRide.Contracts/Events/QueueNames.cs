@@ -7,6 +7,9 @@ namespace SwiftRide.Contracts.Events;
 /// </summary>
 public static class QueueNames
 {
+    public const string MatchingQuoteRequested = "matching.quote-requested";
+    public const string TripQuoteCalculated = "trip.quote-calculated";
+    public const string TripQuoteFailed = "trip.quote-failed";
     public const string PaymentUserRegistered = "payment.user-registered";
     public const string MatchingDriverRegistered = "matching.driver-registered";
     public const string MatchingTripAccepted = "matching.trip-accepted";

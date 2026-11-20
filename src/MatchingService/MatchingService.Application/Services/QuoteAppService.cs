@@ -17,6 +17,15 @@ public class QuoteAppService(
 
     public async Task<QuoteResponse> CreateAsync(QuoteRequest request)
     {
+        var quote = await CalculateAsync(request);
+        await quoteRepository.AddAsync(quote);
+        return new QuoteResponse(quote.Id, quote.DistanceKm, quote.DurationMin,
+            quote.Strategy, quote.Price);
+    }
+
+    // The message consumer persists this quote together with its result outbox.
+    public async Task<Quote> CalculateAsync(QuoteRequest request)
+    {
         
         if (request.TripId == Guid.Empty)
             throw new ValidationException("TripId không hợp lệ");
@@ -60,14 +69,7 @@ public class QuoteAppService(
             CreatedAt = DateTime.UtcNow
         };
 
-        await quoteRepository.AddAsync(quote);
-
-        return new QuoteResponse(
-            quote.Id,
-            quote.DistanceKm,
-            quote.DurationMin,
-            quote.Strategy,
-            quote.Price);
+        return quote;
     }
 
     private static GeoPoint ValidateLocation(

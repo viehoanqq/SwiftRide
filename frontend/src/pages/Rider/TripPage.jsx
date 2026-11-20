@@ -224,6 +224,13 @@ export default function TripPage() {
 
           <TripDetails trip={trip} />
 
+          {trip.status === 'Requested' && (
+            <div>
+              <p role="status">Đang tính giá chuyến đi. Báo giá sẽ tự hiển thị khi có kết quả.</p>
+              <button disabled={submitting || !!error} onClick={() => confirm(false)}>Hủy yêu cầu</button>
+            </div>
+          )}
+
           {trip.status === 'Quoted' && trip.fare?.status === 'Pending' && (
             <fieldset disabled={submitting || !!error}>
               <legend>Xác nhận báo giá (POST /trips/&#123;id&#125;/confirm)</legend>

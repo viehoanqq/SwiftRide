@@ -6,6 +6,9 @@ internal static class IntegrationEventLogFields
 {
     public static (Guid? TripId, Guid? UserId, string Queue) From(IIntegrationEvent message) => message switch
     {
+        QuoteRequested e => (e.TripId, null, QueueNames.MatchingQuoteRequested),
+        QuoteCalculated e => (e.TripId, null, QueueNames.TripQuoteCalculated),
+        QuoteFailed e => (e.TripId, null, QueueNames.TripQuoteFailed),
         UserRegistered e => (null, e.UserId, QueueNames.PaymentUserRegistered),
         DriverRegistered e => (null, e.DriverId, QueueNames.MatchingDriverRegistered),
         TripAccepted e => (e.TripId, null, QueueNames.MatchingTripAccepted),

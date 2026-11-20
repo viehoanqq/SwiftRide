@@ -223,7 +223,6 @@ public class TripConfirmTests
 
     [Theory]
     [InlineData(TripStatus.Requested, true)]
-    [InlineData(TripStatus.Requested, false)]
     [InlineData(TripStatus.DriverOffered, true)]
     [InlineData(TripStatus.DriverOffered, false)]
     [InlineData(TripStatus.Cancelled, true)]

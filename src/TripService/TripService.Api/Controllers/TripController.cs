@@ -18,7 +18,7 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
         ? id : throw new UnauthorizedException("INVALID_TOKEN_SUBJECT", "Token kh?ng c? ID ng??i d?ng h?p l?.");
 
     [HttpPost]
-    [ProducesResponseType(typeof(CreateTripResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(CreateTripResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
@@ -27,7 +27,7 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     public async Task<ActionResult<CreateTripResponse>> Create(CreateTripRequest request)
     {
         var result = await tripService.CreateAsync(UserId, request);
-        return CreatedAtAction(nameof(GetById), new { id = result.TripId }, result);
+        return AcceptedAtAction(nameof(GetById), new { id = result.TripId }, result);
     }
 
     [HttpGet("me/current")]

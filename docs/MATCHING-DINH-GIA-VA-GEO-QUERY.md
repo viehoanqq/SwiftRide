@@ -2,6 +2,10 @@
 
 Tài liệu này mô tả thiết kế chi tiết của **Matching & Pricing Service (`:5002`)** trên nền tảng **.NET 10** và **MongoDB (`MatchDb :27018`)**.
 
+**Luồng báo giá mới:** Trip phát `QuoteRequested` qua Outbox; Matching tính giá,
+lưu quote cùng Outbox kết quả trong Mongo `quoteResults`, rồi phát kết quả về Trip.
+REST `/quote` chỉ còn cho tương thích; xem [chi tiết](QUOTE-BAT-DONG-BO.md).
+
 ---
 
 ## 1. Mô hình Định giá Toán học & Strategy Pattern

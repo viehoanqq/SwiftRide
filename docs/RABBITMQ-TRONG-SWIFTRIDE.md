@@ -6,6 +6,12 @@ Tài liệu này mô tả **code hiện tại của SwiftRide**: event được 
 
 ## 1. Bức tranh tổng thể
 
+**Báo giá đã chuyển sang event:** `POST /trips` trả 202/Requested, phát
+`QuoteRequested` qua Trip Outbox. Matching lưu quote và Outbox nhúng trong Mongo
+`quoteResults`, phát `QuoteCalculated`/`QuoteFailed` để Trip cập nhật trạng thái.
+Client chờ Quoted trước confirm; `/match` vẫn dùng REST.
+Xem [luồng và xử lý lỗi báo giá](QUOTE-BAT-DONG-BO.md).
+
 SwiftRide có bốn service tham gia luồng event:
 
 | Service | Phát event | Nhận event |

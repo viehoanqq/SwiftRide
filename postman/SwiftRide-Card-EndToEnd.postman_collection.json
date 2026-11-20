@@ -399,7 +399,7 @@
           "response": []
         },
         {
-          "name": "3.2 Rider Create Trip & Get Fare Quote (POST /trips)",
+          "name": "3.2 Rider Request Fare Quote (POST /trips -> 202 Requested)",
           "event": [
             {
               "listen": "test",
@@ -407,13 +407,13 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.environment.unset('tripId'); pm.environment.unset('offerId'); pm.environment.unset('paymentId');",
-                  "pm.test('Tạo chuyến mới (201)', () => pm.response.to.have.status(201));",
-                  "if (pm.response.code !== 201) { pm.execution.setNextRequest(null); }",
+                  "pm.test('Đã nhận yêu cầu báo giá (202)', () => pm.response.to.have.status(202));",
+                  "if (pm.response.code !== 202) { pm.execution.setNextRequest(null); }",
                   "else {",
                   "  const trip = pm.response.json();",
                   "  pm.test('Response có tripId hợp lệ', () => pm.expect(trip.tripId).to.match(/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i));",
-                  "  pm.test('Chuyến Quoted và có giá', () => { pm.expect(trip.status).to.eql('Quoted'); pm.expect(trip.price).to.be.above(0); });",
-                  "  if (trip.tripId) pm.environment.set('tripId', trip.tripId);",
+                  "  pm.test('Chuyến đang chờ báo giá', () => { pm.expect(trip.status).to.eql('Requested'); pm.expect(trip.price).to.eql(null); });",
+                  "  if (trip.tripId && trip.status === 'Requested') pm.environment.set('tripId', trip.tripId);",
                   "  else pm.execution.setNextRequest(null);",
                   "}"
                 ]
@@ -451,24 +451,61 @@
                 "trips"
               ]
             },
-            "description": "Rider tạo yêu cầu đặt xe. Trip Service gọi nội bộ sang Matching Service (`POST /quote`) để tính giá và chuyển chuyến sang trạng thái `Quoted`. Tự động lưu `tripId`."
+            "description": "Lưu Trip Requested và QuoteRequested vào Outbox cùng transaction. Báo giá trả về bất đồng bộ ở bước 3.3."
           },
           "response": []
         },
         {
-          "name": "3.3 Rider Get Current Active Trip (/trips/me/current)",
+          "name": "3.3 Rider Wait For Quote (GET /trips/{tripId})",
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const id = pm.environment.get('tripId');",
+                  "if (!id) {",
+                  "  pm.test('Đã có tripId từ bước tạo chuyến', () => pm.expect.fail('Thiếu tripId'));",
+                  "  pm.execution.setNextRequest(null); pm.execution.skipRequest();",
+                  "} else {",
+                  "  const base = pm.variables.replaceIn('{{gatewayUrl}}').replace(/\\/$/, '');",
+                  "  let ready = false;",
+                  "  let last = 'Requested';",
+                  "  try {",
+                  "    for (let attempt = 0; attempt < 30; attempt++) {",
+                  "      const response = await pm.sendRequest({",
+                  "        url: `${base}/trips/${id}`, method: 'GET',",
+                  "        header: { Authorization: `Bearer ${pm.variables.get('riderToken')}` }",
+                  "      });",
+                  "      if (response.code !== 200) { last = `HTTP ${response.code}`; break; }",
+                  "      const trip = response.json();",
+                  "      if (trip.id !== id) { last = 'Sai tripId'; break; }",
+                  "      last = trip.status;",
+                  "      if (last === 'Quoted') { ready = true; break; }",
+                  "      if (last !== 'Requested') break;",
+                  "      await new Promise(resolve => setTimeout(resolve, 2000));",
+                  "    }",
+                  "  } catch (error) { last = error.message; }",
+                  "  pm.test('Nhận báo giá trong thời gian chờ', () => pm.expect(ready, `Trạng thái cuối: ${last}`).to.eql(true));",
+                  "  if (!ready) { pm.execution.setNextRequest(null); pm.execution.skipRequest(); }",
+                  "}"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
-                  "pm.test('Lấy chuyến hiện tại của Rider thành công (200 OK)', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.id).to.eql(pm.environment.get('tripId'));",
-                  "});"
-                ],
-                "type": "text/javascript"
+                  "pm.test('Xem đúng chuyến đã có báo giá (200)', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  const trip = pm.response.json();",
+                  "  pm.expect(trip.id).to.eql(pm.environment.get('tripId'));",
+                  "  pm.expect(trip.status).to.eql('Quoted');",
+                  "  pm.expect(trip.fare.price).to.be.at.least(0);",
+                  "});",
+                  "if (pm.response.code !== 200 || pm.response.json().status !== 'Quoted') pm.execution.setNextRequest(null);"
+                ]
               }
             }
           ],
@@ -486,16 +523,16 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{gatewayUrl}}/trips/me/current",
+              "raw": "{{gatewayUrl}}/trips/{{tripId}}",
               "host": [
                 "{{gatewayUrl}}"
               ],
               "path": [
                 "trips",
-                "me",
-                "current"
+                "{{tripId}}"
               ]
-            }
+            },
+            "description": "Poll tối đa 30 lần, cách nhau 2 giây. Chỉ confirm khi Quoted. Failed hoặc hết thời gian chờ sẽ dừng Runner."
           },
           "response": []
         },

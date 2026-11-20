@@ -10,7 +10,7 @@ public record LocationDto(double Lat, double Lng, string Address);
 public record CreateTripRequest(LocationDto Pickup, LocationDto Dropoff);
 public record CreateTripResponse(
     Guid TripId, string Status,
-    decimal? Price, double? DistanceKm, double? DurationMin, string? Strategy);   // null khi Failed
+    decimal? Price, double? DistanceKm, double? DurationMin, string? Strategy);   // null while Requested
 
 // ----- POST /trips/{id}/confirm
 public record ConfirmTripRequest(bool Accept, string? PaymentMethod, string? CardToken = null);   // CARD requires a test token

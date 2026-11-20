@@ -6,6 +6,9 @@ internal static class IntegrationEventDescriptions
 {
     public static string Name(IIntegrationEvent message) => message switch
     {
+        QuoteRequested => "Trip yêu cầu Matching tính giá chuyến đi",
+        QuoteCalculated => "Matching đã tính giá; Trip cập nhật báo giá",
+        QuoteFailed => "Matching từ chối báo giá; Trip đánh dấu thất bại",
         UserRegistered => "Người dùng đã đăng ký; Payment tạo ví",
         DriverRegistered => "Tài xế đã đăng ký; Matching tạo hồ sơ tài xế",
         TripAccepted => "Tài xế đã nhận chuyến; Matching đánh dấu bận",

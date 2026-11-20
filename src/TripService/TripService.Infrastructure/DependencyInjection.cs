@@ -33,6 +33,7 @@ public static class DependencyInjection
             throw new InvalidOperationException("Payment Saga timeout poll seconds must be 1-300 and batch size 1-500.");
         services.AddSingleton(new PaymentSagaTimeoutOptions(TimeSpan.FromSeconds(timeoutPollSeconds), timeoutBatchSize));
         services.AddScoped<TripPaymentResultHandler>();
+        services.AddScoped<TripQuoteResultHandler>();
         services.AddScoped<TripRefundCoordinator>();
         services.AddScoped<TripRefundResultHandler>();
 
@@ -72,6 +73,10 @@ public static class DependencyInjection
         services.AddSwiftRideMessaging(configuration, environment,
             configureConsumers: bus =>
             {
+                bus.AddConsumer<QuoteCalculatedConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.TripQuoteCalculated);
+                bus.AddConsumer<QuoteFailedConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.TripQuoteFailed);
                 bus.AddConsumer<PaymentSettledConsumer>()
                     .Endpoint(endpoint => endpoint.Name = QueueNames.TripPaymentSettled);
                 bus.AddConsumer<PaymentFailedConsumer>()

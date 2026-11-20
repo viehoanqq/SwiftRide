@@ -2,6 +2,23 @@
 
 The original seven events implement `IIntegrationEvent` in `SwiftRide.Contracts.Events`. The publisher assigns a nonempty `EventId` once and retains it on republish. `CorrelationId` is the business flow ID (`UserId` for registration, `TripId` for trip and payment). `CausationId` is the parent event's `EventId`, or `null` for an HTTP-originated action. `OccurredAt` is UTC at the time the business event occurred. `SchemaVersion` is `1`; incompatible payload changes require a new version. Consumers deduplicate using `EventId`.
 
+## Asynchronous quote contract
+
+| Message | Publisher | Consumer queue | Payload beyond metadata |
+| --- | --- | --- | --- |
+| `QuoteRequested` | Trip SQL Outbox | `matching.quote-requested` | TripId; PickupLat/PickupLng/DropoffLat/DropoffLng: double |
+| `QuoteCalculated` | Matching embedded Mongo Outbox | `trip.quote-calculated` | TripId; QuoteId; Price: decimal (2 places); DistanceKm/DurationMin: double; Strategy |
+| `QuoteFailed` | Matching embedded Mongo Outbox | `trip.quote-failed` | TripId; Reason: NO_DRIVER_AVAILABLE or VALIDATION_ERROR |
+
+CorrelationId is TripId; result CausationId is the original QuoteRequested.EventId.
+Matching stores one immutable result per request EventId, rejects changed payloads,
+and retains result EventId on republish. Trip verifies the original request and
+applies fare/state/history atomically; valid duplicates do not reset accepted fares.
+Infrastructure errors retry / enter `_error`, not QuoteFailed.
+See [quote workflow](QUOTE-BAT-DONG-BO.md) for 202/polling and cancellation behavior.
+
+## Original events
+
 | Event | Publisher | Consumer queue | Payload beyond metadata |
 | --- | --- | --- | --- |
 | `UserRegistered` | Identity | `payment.user-registered` | `UserId: Guid`, `Role: string` |

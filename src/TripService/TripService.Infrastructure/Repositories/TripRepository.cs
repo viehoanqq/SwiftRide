@@ -31,7 +31,7 @@ public class TripRepository(TripDbContext db) : ITripRepository
         if (integrationEvent.EventId == Guid.Empty || integrationEvent.CorrelationId == Guid.Empty ||
             integrationEvent.OccurredAt.Kind != DateTimeKind.Utc || integrationEvent.SchemaVersion < 1)
             throw new ArgumentException("Integration event metadata is invalid.", nameof(integrationEvent));
-        if (integrationEvent is not (TripAccepted or RideCompleted or TripClosed or ProcessPayment or ProcessPaymentTimedOut or RefundPayment))
+        if (integrationEvent is not (QuoteRequested or TripAccepted or RideCompleted or TripClosed or ProcessPayment or ProcessPaymentTimedOut or RefundPayment))
             throw new ArgumentException("Unsupported Trip outbox event type.", nameof(integrationEvent));
 
         db.OutboxMessages.Add(new OutboxMessage
