@@ -224,9 +224,11 @@ export default function TripPage() {
 
           <TripDetails trip={trip} />
 
-          {trip.status === 'Requested' && (
+          {['Requested', 'FindingDriver'].includes(trip.status) && (
             <div>
-              <p role="status">Đang tính giá chuyến đi. Báo giá sẽ tự hiển thị khi có kết quả.</p>
+              <p role="status">{trip.status === 'Requested'
+                ? 'Đang tính giá chuyến đi. Báo giá sẽ tự hiển thị khi có kết quả.'
+                : 'Đang tìm tài xế phù hợp. Trạng thái sẽ tự cập nhật khi có kết quả.'}</p>
               <button disabled={submitting || !!error} onClick={() => confirm(false)}>Hủy yêu cầu</button>
             </div>
           )}

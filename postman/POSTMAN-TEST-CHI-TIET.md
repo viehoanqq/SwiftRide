@@ -20,7 +20,8 @@ Postman **không tự đọc** `.env` của service. Nếu muốn import sẵn t
 | 3.1 | Rider `GET /wallets/me` | Ghi lại số dư ban đầu |
 | 3.2 | Rider `POST /trips` | 202, `Requested`, giá null; tự lưu `tripId` |
 | 3.3 | Rider `GET /trips/{{tripId}}` | Poll tối đa 30 lần cách nhau 2 giây đến `Quoted`, có fare; dừng nếu Failed/hết thời gian |
-| 3.4 | Rider confirm với `{"accept":true,"paymentMethod":"WALLET"}` | 200, `DriverOffered`; không gửi `cardToken` |
+| 3.4 | Rider confirm với `{"accept":true,"paymentMethod":"WALLET"}` | 202, `FindingDriver`; không gửi `cardToken` |
+| 3.5 | Rider `GET /trips/{{tripId}}` | Poll đến `DriverOffered`, tối đa 30 lần cách nhau 2 giây; dừng nếu Failed/Cancelled/hết thời gian |
 | 4.1 | Driver `GET /drivers/me/offers` | Offer phải có đúng `tripId`; nếu không, đăng nhập Driver được mời và gọi lại |
 | 4.2–4.5 | Accept → en-route → pickup | `DriverAccepted` → `EnRoute` → `PickedUp` |
 | 4.6 | Driver dropoff | 200, thường `PaymentPending` |
@@ -30,7 +31,7 @@ Postman **không tự đọc** `.env` của service. Nếu muốn import sẵn t
 
 `4.6` chỉ ghi Trip, Saga và lệnh `ProcessPayment` vào Trip outbox. Publisher gửi lên `payment.process-payment`; Payment xử lý rồi phát `PaymentSettled`/`PaymentFailed`; Trip nhận kết quả và đóng chuyến. Vì vậy `PaymentPending` ngay sau dropoff và `404` ở bước 5.2 **trong lúc chờ** là bình thường. Poll cách nhau vài giây; 404 không phải kết quả cuối của ca thành công. `5.6` kiểm Gateway chặn `POST /payments` với 403 `INTERNAL_ENDPOINT_ONLY`.
 
-**Không chạy riêng folder 04/05 với `tripId` rỗng.** Bước 3.2 phải trả `202` và lưu `tripId`; bước 3.3 phải chờ `Quoted`; bước 3.4 phải trả `DriverOffered`; bước 4.1 phải có offer đúng chuyến cho Driver đang đăng nhập. Collection dừng Runner ngay khi một điều kiện này không đạt. `GET /drivers/me/current-trip` có thể trả một chuyến cũ của Driver, vì vậy không dùng ID đó để thay cho `tripId` của chuyến mới.
+**Không chạy riêng folder 04/05 với `tripId` rỗng.** Bước 3.2 phải trả `202` và lưu `tripId`; bước 3.3 phải chờ `Quoted`; bước 3.4 phải trả `202/FindingDriver`; bước 3.5 phải chờ `DriverOffered`; bước 4.1 phải có offer đúng chuyến cho Driver đang đăng nhập. Collection dừng Runner ngay khi một điều kiện này không đạt. `GET /drivers/me/current-trip` có thể trả một chuyến cũ của Driver, vì vậy không dùng ID đó để thay cho `tripId` của chuyến mới.
 
 Báo giá dùng RabbitMQ + Outbox, xem [luồng và xử lý lỗi](../docs/QUOTE-BAT-DONG-BO.md). Matching ngừng thì Trip tiếp tục Requested; hết thời gian chờ Postman không tự biến chuyến thành Failed. Có thể hủy yêu cầu bằng confirm accept=false khi còn Requested.
 

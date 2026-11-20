@@ -16,5 +16,6 @@ public enum TripStatus
     PaymentFailed,
     RefundPending,
     Refunded,
-    RefundNeedsAttention
+    RefundNeedsAttention,
+    FindingDriver
 }

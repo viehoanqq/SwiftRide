@@ -23,6 +23,8 @@ public static class DependencyInjection
         services.AddSwiftRideMessaging(configuration, environment,
             configureConsumers: bus =>
             {
+                bus.AddConsumer<MatchRequestedConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.MatchingMatchRequested);
                 bus.AddConsumer<QuoteRequestedConsumer>()
                     .Endpoint(endpoint => endpoint.Name = QueueNames.MatchingQuoteRequested);
                 bus.AddConsumer<DriverRegisteredConsumer>()
@@ -33,7 +35,10 @@ public static class DependencyInjection
                     .Endpoint(endpoint => endpoint.Name = QueueNames.MatchingTripClosed);
             });
         if (environment?.IsEnvironment("Testing") != true)
+        {
+            services.AddHostedService<MatchOutboxPublisher>();
             services.AddHostedService<QuoteOutboxPublisher>();
+        }
         return services;
     }
     public static async Task InitializeDatabaseAsync(this IServiceProvider services)

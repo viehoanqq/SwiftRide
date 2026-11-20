@@ -8,6 +8,7 @@ const PAYMENT_METHOD_LABEL = {
 const STATUS_LABELS = {
   Requested: 'Tạo yêu cầu chuyến',
   Quoted: 'Đã báo giá (chờ xác nhận)',
+  FindingDriver: 'Đang tìm tài xế',
   DriverOffered: 'Đã gửi lời mời tài xế',
   DriverAccepted: 'Tài xế đã nhận chuyến',
   EnRoute: 'Tài xế đang đến điểm đón',
@@ -47,6 +48,7 @@ function buildTimelineSteps(trip) {
     });
   } else {
     baseSteps.push(
+      { key: 'FindingDriver', label: STATUS_LABELS.FindingDriver },
       { key: 'DriverOffered', label: STATUS_LABELS.DriverOffered },
       { key: 'DriverAccepted', label: STATUS_LABELS.DriverAccepted },
       { key: 'EnRoute', label: STATUS_LABELS.EnRoute },

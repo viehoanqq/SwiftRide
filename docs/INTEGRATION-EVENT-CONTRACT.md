@@ -1,4 +1,4 @@
-﻿# Integration event contract (v1)
+# Integration event contract (v1)
 
 The original seven events implement `IIntegrationEvent` in `SwiftRide.Contracts.Events`. The publisher assigns a nonempty `EventId` once and retains it on republish. `CorrelationId` is the business flow ID (`UserId` for registration, `TripId` for trip and payment). `CausationId` is the parent event's `EventId`, or `null` for an HTTP-originated action. `OccurredAt` is UTC at the time the business event occurred. `SchemaVersion` is `1`; incompatible payload changes require a new version. Consumers deduplicate using `EventId`.
 
@@ -16,6 +16,19 @@ and retains result EventId on republish. Trip verifies the original request and
 applies fare/state/history atomically; valid duplicates do not reset accepted fares.
 Infrastructure errors retry / enter `_error`, not QuoteFailed.
 See [quote workflow](QUOTE-BAT-DONG-BO.md) for 202/polling and cancellation behavior.
+
+## Asynchronous matching contract
+
+| Message | Publisher | Queue | Payload beyond metadata |
+| --- | --- | --- | --- |
+| MatchRequested | Trip Outbox | matching.match-requested | TripId, AttemptNo, PickupLat/Lng, ExcludeDriverIds: Guid[] |
+| DriverMatched | Matching embedded Outbox | trip.driver-matched | TripId, AttemptNo, DriverId, DriverName, DistanceKm |
+| MatchFailed | Matching embedded Outbox | trip.match-failed | TripId, AttemptNo, Reason |
+
+CorrelationId = TripId, result CausationId = request EventId. Matching stores one immutable
+result per request EventId in `matchResults`. Trip verifies the original request and attempt,
+commits offer/state/history together and ignores matching duplicates without resetting offers.
+See [matching workflow](MATCH-BAT-DONG-BO.md).
 
 ## Original events
 

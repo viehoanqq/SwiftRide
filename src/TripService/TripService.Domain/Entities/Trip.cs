@@ -62,6 +62,15 @@ public class Trip
     public void Confirm(PaymentMethod method)
         => CurrentState.Confirm(this, method);
 
+    public void BeginMatching()
+    {
+        if (Status is not (TripStatus.Quoted or TripStatus.DriverOffered) ||
+            Fare is not { Status: FareStatus.Accepted, PaymentMethod: not null } ||
+            Offers.Any(o => o.Status is OfferStatus.Pending or OfferStatus.Accepted))
+            throw new InvalidTripStateException("INVALID_TRIP_STATE: Không thể bắt đầu tìm tài xế.");
+        TransitionTo(TripStatus.FindingDriver);
+    }
+
     public TripDriverOffer OfferDriver(
         Guid driverId,
         int attemptNo,

@@ -13,7 +13,7 @@ namespace TripService.Tests.Services;
 public class TripDriverWorkflowTests
 {
     private readonly Mock<ITripRepository> repository = new();
-    private TripAppService Service => new(repository.Object, Mock.Of<IMatchingClient>(), Mock.Of<IDriverStatusClient>());
+    private TripAppService Service => new(repository.Object, Mock.Of<IDriverStatusClient>());
 
     internal static Trip OfferedTrip(Guid driverId, Guid? riderId = null)
     {

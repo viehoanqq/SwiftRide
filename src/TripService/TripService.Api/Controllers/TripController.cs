@@ -42,6 +42,7 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
 
     [HttpPost("{id:guid}/confirm")]
     [ProducesResponseType(typeof(ConfirmTripResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ConfirmTripResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -51,7 +52,8 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     public async Task<IActionResult> Confirm(Guid id, [FromBody] ConfirmTripRequest request, CancellationToken cancellationToken)
     {
         var result = await tripService.ConfirmAsync(id, UserId, request);
-        return Ok(result);
+        return result.Status == "FindingDriver"
+            ? AcceptedAtAction(nameof(GetById), new { id }, result) : Ok(result);
     }
 
     [HttpGet("{id:guid}")]
@@ -76,6 +78,7 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
 
     [HttpPost("{id:guid}/driver-reject")]
     [ProducesResponseType(typeof(TripDriverActionResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(TripDriverActionResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
@@ -84,7 +87,7 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
     public async Task<ActionResult<TripDriverActionResponse>> RejectOffer(Guid id, CancellationToken cancellationToken)
     {
         var result = await tripWorkflow.RejectOfferAsync(id, UserId, cancellationToken);
-        return Ok(result);
+        return result.Status == "FindingDriver" ? Accepted(result) : Ok(result);
     }
 
     [HttpPost("{id:guid}/en-route")]

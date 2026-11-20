@@ -13,7 +13,7 @@ using PaymentMethod = TripService.Domain.Enums.PaymentMethod;
 
 namespace TripService.Application.Services;
 
-public class TripAppService(ITripRepository trips, IMatchingClient matching,
+public class TripAppService(ITripRepository trips,
     IDriverStatusClient driverStatusClient,
     TripWorkflowOptions? workflowOptions = null,
     IPaymentSagaRepository? paymentSagas = null) : ITripDriverWorkflow
@@ -83,7 +83,7 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
             throw new ForbiddenException("FORBIDDEN", "Bạn không có quyền thao tác trên chuyến đi này.");
         }
 
-        if (trip.Status != TripStatus.Quoted && !(trip.Status == TripStatus.Requested && !request.Accept))
+        if (trip.Status != TripStatus.Quoted && !((trip.Status is TripStatus.Requested or TripStatus.FindingDriver) && !request.Accept))
         {
             throw new InvalidTripStateException(
                 $"INVALID_TRIP_STATE: Không thể xác nhận hoặc từ chối chuyến đi khi đang ở trạng thái '{trip.Status}'.");
@@ -116,33 +116,7 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
             trip.Confirm(paymentMethod);
             trip.Fare!.CardToken = request.CardToken;
 
-            var matchedDriver = await matching.MatchAsync(new MatchDriverRequest(
-                (double)trip.Location.PickupLat,
-                (double)trip.Location.PickupLng));
-
-            if (matchedDriver is null)
-            {
-                trip.MarkFailed();
-            }
-            else if (!Guid.TryParse(matchedDriver.DriverId, out var driverId) || driverId == Guid.Empty)
-            {
-                throw new InvalidDataException(
-                    "Matching service returned a DriverId that is not a valid TripDB user GUID.");
-            }
-            else if (!double.IsFinite(matchedDriver.DistanceKm) || matchedDriver.DistanceKm < 0)
-            {
-                throw new InvalidDataException(
-                    "Matching service returned an invalid distance to pickup.");
-            }
-            else
-            {
-                var offer = trip.OfferDriver(
-                    driverId,
-                    trip.Offers.Count + 1,
-                    matchedDriver.DistanceKm);
-                offer.DriverName = matchedDriver.Name;
-                trips.AddOffer(offer);
-            }
+            RequestMatch(trip);
         }
 
         await trips.SaveChangesAsync();
@@ -257,24 +231,19 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
         }
         else
         {
-            var excluded = trip.Offers.Select(o => o.DriverId.ToString("D")).ToList();
-            var matched = await matching.MatchAsync(new MatchDriverRequest(
-                (double)trip.Location.PickupLat, (double)trip.Location.PickupLng,
-                ExcludeDriverIds: excluded));
-            if (matched is null) trip.MarkFailed();
-            else
-            {
-                if (!Guid.TryParse(matched.DriverId, out var nextDriver) || nextDriver == Guid.Empty ||
-                    trip.Offers.Any(o => o.DriverId == nextDriver) ||
-                    !double.IsFinite(matched.DistanceKm) || matched.DistanceKm < 0)
-                    throw new DownstreamException(502, "MATCHING_INVALID_RESPONSE", "Matching trả về tài xế không hợp lệ.");
-                var offer = trip.OfferDriver(nextDriver, trip.Offers.Count + 1, matched.DistanceKm);
-                offer.DriverName = matched.Name;
-                trips.AddOffer(offer);
-            }
+            RequestMatch(trip);
         }
         await trips.SaveChangesAsync();
         return new TripDriverActionResponse(trip.Status.ToString());
+    }
+
+    private void RequestMatch(Trip trip)
+    {
+        trip.BeginMatching();
+        trips.AddOutboxEvent(new MatchRequested(
+            Guid.NewGuid(), trip.Id, null, DateTime.UtcNow, trip.Id, trip.Offers.Count + 1,
+            (double)trip.Location.PickupLat, (double)trip.Location.PickupLng,
+            trip.Offers.Select(o => o.DriverId).ToArray()));
     }
 
     public Task<TripDriverActionResponse> MarkEnRouteAsync(
@@ -368,42 +337,6 @@ public class TripAppService(ITripRepository trips, IMatchingClient matching,
             throw new ValidationException($"{label} phải có tọa độ và địa chỉ hợp lệ.");
         }
     }
-    public async Task<bool> ProcessInitialMatchingAsync(
-        Guid tripId,
-        string paymentMethod,
-        CancellationToken cancellationToken)
-    {
-        var trip = await trips.GetByIdAsync(tripId);
-        if (trip is null || trip.Status != TripStatus.Quoted) return false;
-
-        if (!Enum.TryParse<PaymentMethod>(paymentMethod, ignoreCase: true, out var parsedPaymentMethod))
-        {
-            return false;
-        }
-
-        trip.Confirm(parsedPaymentMethod);
-
-        var matchedDriver = await matching.MatchAsync(new MatchDriverRequest(
-            (double)trip.Location.PickupLat,
-            (double)trip.Location.PickupLng));
-
-        if (matchedDriver is null)
-        {
-            trip.MarkFailed();
-            await trips.SaveChangesAsync();
-            return false;
-        }
-
-        if (Guid.TryParse(matchedDriver.DriverId, out var driverId) && driverId != Guid.Empty)
-        {
-            var offer = trip.OfferDriver(driverId, trip.Offers.Count + 1);
-            trips.AddOffer(offer);
-        }
-
-        await trips.SaveChangesAsync();
-        return true;
-    }
-
     public async Task CancelTripAsync(
         Guid tripId,
         CancellationToken cancellationToken)

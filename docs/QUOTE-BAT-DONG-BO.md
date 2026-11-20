@@ -19,7 +19,7 @@
    request gốc; khóa dòng Trip, lưu fare + `Quoted` + history trong cùng transaction.
    `QuoteFailed` hợp lệ chuyển `Requested` thành `Failed`.
 8. Client poll `GET /trips/{tripId}`; chỉ gọi confirm accept=true khi `Quoted`.
-   `/match` tại bước confirm vẫn dùng REST như trước.
+   Bước confirm tiếp tục bằng [matching bất đồng bộ](MATCH-BAT-DONG-BO.md).
 
 | Message | Queue |
 | --- | --- |
@@ -80,6 +80,6 @@ quote của workflow mới nằm trong `quoteResults.quote` cùng Outbox kết q
 Không cần migration SQL vì dùng trạng thái Requested và bảng Outbox sẵn có.
 MongoDB tạo collection/index mới khi Matching khởi động.
 
-ADR-03 cần sửa: REST dùng cho `/match` và truy vấn đối soát Saga;
-báo giá, tạo ví/hồ sơ, trạng thái tài xế, thu/hoàn tiền dùng RabbitMQ + Outbox.
+ADR-03 cần sửa: REST dùng cho truy vấn đối soát Saga;
+báo giá, tìm tài xế, tạo ví/hồ sơ, trạng thái tài xế, thu/hoàn tiền dùng RabbitMQ + Outbox.
 Đổi lại, bước xem giá không còn trả kết quả ngay trong HTTP tạo chuyến.

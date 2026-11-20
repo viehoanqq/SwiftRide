@@ -10,6 +10,7 @@ public abstract class TripState
 {
     TripStatus.Requested      => new RequestedState(),
     TripStatus.Quoted         => new QuotedState(),
+    TripStatus.FindingDriver  => new FindingDriverState(),
     TripStatus.DriverOffered  => new DriverOfferedState(),
     TripStatus.DriverAccepted => new DriverAcceptedState(),
     TripStatus.EnRoute        => new EnRouteState(),

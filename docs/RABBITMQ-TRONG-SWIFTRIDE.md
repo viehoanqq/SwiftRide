@@ -9,7 +9,8 @@ Tài liệu này mô tả **code hiện tại của SwiftRide**: event được 
 **Báo giá đã chuyển sang event:** `POST /trips` trả 202/Requested, phát
 `QuoteRequested` qua Trip Outbox. Matching lưu quote và Outbox nhúng trong Mongo
 `quoteResults`, phát `QuoteCalculated`/`QuoteFailed` để Trip cập nhật trạng thái.
-Client chờ Quoted trước confirm; `/match` vẫn dùng REST.
+Client chờ Quoted trước confirm; confirm tiếp tục phát MatchRequested và chờ
+DriverMatched/MatchFailed. Xem [matching bất đồng bộ](MATCH-BAT-DONG-BO.md).
 Xem [luồng và xử lý lỗi báo giá](QUOTE-BAT-DONG-BO.md).
 
 SwiftRide có bốn service tham gia luồng event:

@@ -1,4 +1,4 @@
-﻿using SwiftRide.Messaging;
+using SwiftRide.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,6 +34,7 @@ public static class DependencyInjection
         services.AddSingleton(new PaymentSagaTimeoutOptions(TimeSpan.FromSeconds(timeoutPollSeconds), timeoutBatchSize));
         services.AddScoped<TripPaymentResultHandler>();
         services.AddScoped<TripQuoteResultHandler>();
+        services.AddScoped<TripMatchResultHandler>();
         services.AddScoped<TripRefundCoordinator>();
         services.AddScoped<TripRefundResultHandler>();
 
@@ -47,12 +48,6 @@ public static class DependencyInjection
             throw new InvalidOperationException(
                 "Configuration 'Services:MatchingService' must be an absolute HTTP or HTTPS URL.");
         }
-
-        services.AddHttpClient<IMatchingClient, MatchingClient>(client =>
-        {
-            client.BaseAddress = matchingServiceUri;
-            client.Timeout = Timeout.InfiniteTimeSpan;
-        }).AddHttpMessageHandler<ForwardRequestHeadersHandler>();
 
         services.AddHttpClient<IDriverStatusClient, DriverStatusClient>(client =>
         {
@@ -73,6 +68,10 @@ public static class DependencyInjection
         services.AddSwiftRideMessaging(configuration, environment,
             configureConsumers: bus =>
             {
+                bus.AddConsumer<DriverMatchedConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.TripDriverMatched);
+                bus.AddConsumer<MatchFailedConsumer>()
+                    .Endpoint(endpoint => endpoint.Name = QueueNames.TripMatchFailed);
                 bus.AddConsumer<QuoteCalculatedConsumer>()
                     .Endpoint(endpoint => endpoint.Name = QueueNames.TripQuoteCalculated);
                 bus.AddConsumer<QuoteFailedConsumer>()

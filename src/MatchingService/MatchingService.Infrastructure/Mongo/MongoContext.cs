@@ -26,14 +26,22 @@ public class MongoContext
         Drivers = database.GetCollection<DriverDocument>("drivers");
         Quotes = database.GetCollection<QuoteDocument>("quotes");
         QuoteResults = database.GetCollection<QuoteResultDocument>("quoteResults");
+        MatchResults = database.GetCollection<MatchResultDocument>("matchResults");
     }
 
     public IMongoCollection<DriverDocument> Drivers { get; }
     public IMongoCollection<QuoteDocument> Quotes { get; }
     public IMongoCollection<QuoteResultDocument> QuoteResults { get; }
+    public IMongoCollection<MatchResultDocument> MatchResults { get; }
 
     public async Task EnsureIndexesAsync()
     {
+        await MatchResults.Indexes.CreateManyAsync(
+        [
+            new CreateIndexModel<MatchResultDocument>(Builders<MatchResultDocument>.IndexKeys
+                .Ascending(x => x.PublishedAt).Ascending(x => x.ClaimedUntil).Ascending(x => x.CreatedAt)),
+            new CreateIndexModel<MatchResultDocument>(Builders<MatchResultDocument>.IndexKeys.Ascending(x => x.TripId))
+        ]);
         await QuoteResults.Indexes.CreateManyAsync(
         [
             new CreateIndexModel<QuoteResultDocument>(Builders<QuoteResultDocument>.IndexKeys

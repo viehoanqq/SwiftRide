@@ -17,7 +17,7 @@ public class TripConfirmTests
 
     public TripConfirmTests()
     {
-        _service = new TripAppService(_mockTripRepo.Object, _mockMatchingClient.Object, Mock.Of<IDriverStatusClient>());
+        _service = new TripAppService(_mockTripRepo.Object, Mock.Of<IDriverStatusClient>());
         _mockMatchingClient
             .Setup(client => client.MatchAsync(It.IsAny<MatchDriverRequest>()))
             .ReturnsAsync(new MatchDriverResult(
@@ -99,27 +99,19 @@ public class TripConfirmTests
         var response = await _service.ConfirmAsync(tripId, riderId, request);
 
         // Assert
-        Assert.Equal("DriverOffered", response.Status);
-        Assert.Equal(TripStatus.DriverOffered, trip.Status);
+        Assert.Equal("FindingDriver", response.Status);
+        Assert.Equal(TripStatus.FindingDriver, trip.Status);
         Assert.NotNull(trip.Fare);
         Assert.Equal(FareStatus.Accepted, trip.Fare.Status);
         Assert.Equal(expectedMethod, trip.Fare.PaymentMethod);
         Assert.Equal(token, trip.Fare.CardToken);
         Assert.NotNull(trip.Fare.RespondedAt);
-        var offer = Assert.Single(trip.Offers);
-        Assert.Equal(1, offer.AttemptNo);
-        Assert.Equal(1.2, offer.DistanceToPickupKm);
-        Assert.Equal(OfferStatus.Pending, offer.Status);
+        Assert.Empty(trip.Offers);
         Assert.Equal(TripStatus.Quoted, trip.History[^1].FromStatus);
-        Assert.Equal(TripStatus.DriverOffered, trip.History[^1].ToStatus);
-        _mockTripRepo.Verify(repository => repository.AddOffer(It.Is<TripDriverOffer>(addedOffer =>
-            addedOffer.Id == offer.Id &&
-            addedOffer.TripId == tripId &&
-            addedOffer.DriverId == offer.DriverId &&
-            addedOffer.DistanceToPickupKm == 1.2)), Times.Once);
-        _mockMatchingClient.Verify(client => client.MatchAsync(It.Is<MatchDriverRequest>(match =>
-            match.PickupLat == 10.7725 &&
-            match.PickupLng == 10.6980)), Times.Once);
+        Assert.Equal(TripStatus.FindingDriver, trip.History[^1].ToStatus);
+        _mockTripRepo.Verify(r => r.AddOutboxEvent(It.Is<SwiftRide.Contracts.Events.IIntegrationEvent>(
+            e => e is SwiftRide.Contracts.Events.MatchRequested && e.CorrelationId == tripId)), Times.Once);
+        _mockMatchingClient.VerifyNoOtherCalls();
         _mockTripRepo.Verify(r => r.SaveChangesAsync(), Times.Once);
     }
 
@@ -140,49 +132,18 @@ public class TripConfirmTests
     }
 
     [Fact]
-    public async Task ConfirmAsync_ShouldFailTrip_WhenMatchingHasNoAvailableDriver()
+    public async Task ConfirmAsync_DuplicateDoesNotQueueAnotherRequest_AndPendingCanBeCancelled()
     {
         var riderId = Guid.NewGuid();
         var trip = CreateSampleQuotedTrip(riderId);
-        var tripId = trip.Id;
-        _mockTripRepo.Setup(repository => repository.GetByIdAsync(tripId)).ReturnsAsync(trip);
-        _mockMatchingClient
-            .Setup(client => client.MatchAsync(It.IsAny<MatchDriverRequest>()))
-            .ReturnsAsync((MatchDriverResult?)null);
-
-        var response = await _service.ConfirmAsync(
-            tripId,
-            riderId,
-            new ConfirmTripRequest(Accept: true, PaymentMethod: "WALLET"));
-
-        Assert.Equal("Failed", response.Status);
-        Assert.Equal(TripStatus.Failed, trip.Status);
-        Assert.Empty(trip.Offers);
-        _mockTripRepo.Verify(repository => repository.SaveChangesAsync(), Times.Once);
-    }
-
-    [Fact]
-    public async Task ConfirmAsync_ShouldNotSave_WhenMatchingReturnsInvalidDriverId()
-    {
-        var riderId = Guid.NewGuid();
-        var trip = CreateSampleQuotedTrip(riderId);
-        var tripId = trip.Id;
-        _mockTripRepo.Setup(repository => repository.GetByIdAsync(tripId)).ReturnsAsync(trip);
-        _mockMatchingClient
-            .Setup(client => client.MatchAsync(It.IsAny<MatchDriverRequest>()))
-            .ReturnsAsync(new MatchDriverResult(
-                "not-a-guid",
-                "Driver",
-                "Available",
-                1.2,
-                new GeoPointDto(10.77, 106.69)));
-
-        await Assert.ThrowsAsync<InvalidDataException>(() => _service.ConfirmAsync(
-            tripId,
-            riderId,
-            new ConfirmTripRequest(Accept: true, PaymentMethod: "WALLET")));
-
-        _mockTripRepo.Verify(repository => repository.SaveChangesAsync(), Times.Never);
+        _mockTripRepo.Setup(r => r.GetByIdAsync(trip.Id)).ReturnsAsync(trip);
+        await _service.ConfirmAsync(trip.Id, riderId, new(true, "WALLET"));
+        await Assert.ThrowsAsync<InvalidTripStateException>(() =>
+            _service.ConfirmAsync(trip.Id, riderId, new(true, "WALLET")));
+        _mockTripRepo.Verify(r => r.AddOutboxEvent(It.IsAny<SwiftRide.Contracts.Events.IIntegrationEvent>()), Times.Once);
+        var cancelled = await _service.ConfirmAsync(trip.Id, riderId, new(false, null));
+        Assert.Equal("Cancelled", cancelled.Status);
+        _mockMatchingClient.VerifyNoOtherCalls();
     }
 
     [Fact]

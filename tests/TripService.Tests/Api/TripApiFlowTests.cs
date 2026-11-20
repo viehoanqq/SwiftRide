@@ -42,13 +42,14 @@ public class TripApiFlowTests
     {
         var id = await Create(factory, rider);
         using var response = await rider.PostAsJsonAsync($"/trips/{id}/confirm", new { accept = true, paymentMethod = "WALLET" });
-        await AssertState(response, "DriverOffered");
+        await AssertState(response, "FindingDriver");
+        CompleteMatch(factory, id, factory.Driver);
         return id;
     }
 
     private static async Task AssertState(HttpResponseMessage response, string status)
     {
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(status == "FindingDriver" ? HttpStatusCode.Accepted : HttpStatusCode.OK, response.StatusCode);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(status, json.RootElement.GetProperty("status").GetString());
     }
@@ -68,7 +69,8 @@ public class TripApiFlowTests
         using var driver = app.Client(app.Driver, "Driver");
         var id = await Create(app, rider);
         await AssertState(await rider.PostAsJsonAsync($"/trips/{id}/confirm",
-            new { accept = true, paymentMethod = "CARD", cardToken = "test-card-approved" }), "DriverOffered");
+            new { accept = true, paymentMethod = "CARD", cardToken = "test-card-approved" }), "FindingDriver");
+        CompleteMatch(app, id, app.Driver);
         await AssertState(await driver.PostAsync($"/trips/{id}/driver-accept", null), "DriverAccepted");
         await AssertState(await driver.PostAsync($"/trips/{id}/en-route", null), "EnRoute");
         await AssertState(await driver.PostAsync($"/trips/{id}/pickup", null), "PickedUp");
@@ -105,7 +107,7 @@ public class TripApiFlowTests
         await AssertState(await driver.PostAsync($"/trips/{id}/pickup", null), "PickedUp");
         await AssertState(await driver.PostAsync($"/trips/{id}/dropoff", null), "PaymentPending");
         var detail = (await rider.GetFromJsonAsync<TripDetailDto>($"/trips/{id}"))!;
-        Assert.Equal(new[] { "Requested", "Quoted", "DriverOffered", "DriverAccepted", "EnRoute", "PickedUp", "DroppedOff", "PaymentPending" },
+        Assert.Equal(new[] { "Requested", "Quoted", "FindingDriver", "DriverOffered", "DriverAccepted", "EnRoute", "PickedUp", "DroppedOff", "PaymentPending" },
             detail.History.Select(h => h.To));
         Assert.Null(detail.History[0].From);
         for (var i = 1; i < detail.History.Count; i++) Assert.Equal(detail.History[i - 1].To, detail.History[i].From);
@@ -131,28 +133,33 @@ public class TripApiFlowTests
         using var driver = app.Client(app.Driver, "Driver");
         using var second = app.Client(app.SecondDriver, "Driver");
         var id = await Offer(app, rider);
-        app.Matching.Setup(c => c.MatchAsync(It.Is<MatchDriverRequest>(r => r.ExcludeDriverIds != null && r.ExcludeDriverIds.Contains(app.Driver.ToString()))))
-            .ReturnsAsync(new MatchDriverResult(app.SecondDriver.ToString(), "Second", "Available", 2, new GeoPointDto(10.77, 106.69)));
         var count = app.Store.Committed[id].History.Count;
-        await AssertState(await driver.PostAsync($"/trips/{id}/driver-reject", null), "DriverOffered");
-        Assert.Equal(count, app.Store.Committed[id].History.Count);
+        await AssertState(await driver.PostAsync($"/trips/{id}/driver-reject", null), "FindingDriver");
+        var request = app.Store.Events.OfType<MatchRequested>().Single(x => x.TripId == id && x.AttemptNo == 2);
+        Assert.Contains(app.Driver, request.ExcludeDriverIds);
+        Assert.Equal(count + 1, app.Store.Committed[id].History.Count);
+        CompleteMatch(app, id, app.SecondDriver);
         Assert.Empty((await driver.GetFromJsonAsync<List<DriverOfferDto>>("/drivers/me/offers"))!);
         Assert.Single((await second.GetFromJsonAsync<List<DriverOfferDto>>("/drivers/me/offers"))!);
         await AssertState(await second.PostAsync($"/trips/{id}/driver-reject", null), "Failed");
         Assert.All(app.Store.Committed[id].Offers, o => Assert.Equal(OfferStatus.Rejected, o.Status));
-        app.Matching.Verify(c => c.MatchAsync(It.IsAny<MatchDriverRequest>()), Times.Exactly(2));
+        app.Matching.Verify(c => c.MatchAsync(It.IsAny<MatchDriverRequest>()), Times.Never);
         app.StatusClient.Verify(c => c.SetTripStatusAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<DriverAvailabilityStatus>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task Reject_NoReplacementDriver_FailsTrip()
+    public async Task Reject_QueuesReplacementWithoutCallingHttp()
     {
         using var app = new TripApiFactory();
         using var rider = app.Client(app.Rider, "Rider");
         using var driver = app.Client(app.Driver, "Driver");
         var id = await Offer(app, rider);
         app.Matching.Setup(c => c.MatchAsync(It.IsAny<MatchDriverRequest>())).ReturnsAsync((MatchDriverResult?)null);
-        await AssertState(await driver.PostAsync($"/trips/{id}/driver-reject", null), "Failed");
+        await AssertState(await driver.PostAsync($"/trips/{id}/driver-reject", null), "FindingDriver");
+        Assert.Equal(TripStatus.FindingDriver, app.Store.Committed[id].Status);
+        Assert.Single(app.Store.Events.OfType<MatchRequested>().Where(x => x.AttemptNo == 2));
+        Assert.All(app.Store.Committed[id].Offers, o => Assert.Equal(OfferStatus.Rejected, o.Status));
+        app.Matching.Verify(c => c.MatchAsync(It.IsAny<MatchDriverRequest>()), Times.Never);
     }
 
     [Fact]
@@ -288,38 +295,27 @@ public class TripApiFlowTests
     }
 
     [Fact]
-    public async Task NoDriverDuringConfirm_ReturnsFailed()
+    public async Task MatchingUnavailable_ConfirmStillPersistsRequest()
     {
         using var app = new TripApiFactory();
         using var rider = app.Client(app.Rider, "Rider");
-        app.Matching.Setup(c => c.MatchAsync(It.IsAny<MatchDriverRequest>())).ReturnsAsync((MatchDriverResult?)null);
+        app.Matching.Setup(c => c.MatchAsync(It.IsAny<MatchDriverRequest>()))
+            .ThrowsAsync(new HttpRequestException("Matching offline"));
         var id = await Create(app, rider);
         await AssertState(await rider.PostAsJsonAsync($"/trips/{id}/confirm",
-            new { accept = true, paymentMethod = "WALLET" }), "Failed");
-        Assert.Equal(TripStatus.Failed, app.Store.Committed[id].Status);
+            new { accept = true, paymentMethod = "WALLET" }), "FindingDriver");
+        Assert.Single(app.Store.Events.OfType<MatchRequested>());
+        Assert.Empty(app.Store.Committed[id].Offers);
+        app.Matching.Verify(c => c.MatchAsync(It.IsAny<MatchDriverRequest>()), Times.Never);
     }
 
-    [Theory]
-    [InlineData("confirm", 502)]
-    [InlineData("confirm", 504)]
-    [InlineData("reject", 502)]
-    [InlineData("reject", 504)]
-    public async Task MatchingFailure_DoesNotPersistPartialWorkflow(string stage, int status)
+    // HTTP tests inject an asynchronous matching result; this is not a broker/SQL test.
+    private static void CompleteMatch(TripApiFactory app, Guid id, Guid driver)
     {
-        using var app = new TripApiFactory();
-        using var rider = app.Client(app.Rider, "Rider");
-        using var driver = app.Client(app.Driver, "Driver");
-        var id = stage == "confirm" ? await Create(app, rider) : await Offer(app, rider);
-        var before = JsonSerializer.Serialize(app.Store.Committed);
-        var exception = new DownstreamException(status, "MATCHING_FAILURE", "Test failure");
-        app.Matching.Setup(c => c.MatchAsync(It.IsAny<MatchDriverRequest>())).ThrowsAsync(exception);
-        using var response = stage switch
-        {
-            "confirm" => await rider.PostAsJsonAsync($"/trips/{id}/confirm", new { accept = true, paymentMethod = "WALLET" }),
-            _ => await driver.PostAsync($"/trips/{id}/driver-reject", null)
-        };
-        await Error(response, (HttpStatusCode)status, "MATCHING_FAILURE");
-        Assert.Equal(before, JsonSerializer.Serialize(app.Store.Committed));
+        var trip = app.Store.Committed[id];
+        Assert.Equal(TripStatus.FindingDriver, trip.Status);
+        var offer = trip.OfferDriver(driver, trip.Offers.Count + 1, 1.5);
+        offer.DriverName = "Driver";
     }
 
     private static async Task<Guid> AdvanceToPickedUp(TripApiFactory app, HttpClient rider, HttpClient driver)
