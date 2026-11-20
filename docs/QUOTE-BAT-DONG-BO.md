@@ -47,8 +47,8 @@ Ví dụ phản hồi tạo chuyến:
 ```
 
 Frontend đã poll trang chi tiết chuyến và chỉ hiện form xác nhận khi `Quoted`.
-Rider có thể hủy khi đang chờ bằng `POST /trips/{id}/confirm` với
-`{"accept":false}`. Kết quả báo giá đến sau khi hủy bị bỏ qua.
+Rider có thể hủy khi đang chờ bằng `POST /trips/{id}/cancel`, không cần body.
+Kết quả báo giá đến sau khi hủy bị bỏ qua.
 
 Hai collection WALLET/CARD: bước 3.2 kiểm tra 202/Requested, bước 3.3 poll
 tối đa 30 lần cách nhau 2 giây. Failed, lỗi HTTP hoặc hết thời gian chờ sẽ dừng

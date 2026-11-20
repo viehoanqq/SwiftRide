@@ -15,6 +15,7 @@ public record CreateTripResponse(
 // ----- POST /trips/{id}/confirm
 public record ConfirmTripRequest(bool Accept, string? PaymentMethod, string? CardToken = null);   // CARD requires a test token
 public record ConfirmTripResponse(string Status);
+public record CancelTripResponse(string Status);
 
 // A staff-approved compensation; reason is one of SagaRefundReasonCodes.
 public sealed record ApproveTripRefundRequest(string ReasonCode, string EvidenceReference);

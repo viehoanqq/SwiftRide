@@ -79,7 +79,8 @@ export default function TripPage() {
     locked.current = true;
     setSubmitting(true);
     try {
-      await tripApi.confirm(id, accept, accept ? paymentMethod : null, resolvedCardToken);
+      if (accept) await tripApi.confirm(id, true, paymentMethod, resolvedCardToken);
+      else await tripApi.cancel(id);
     } catch (err) {
       setActionError(getErrorMessage(err));
     } finally {

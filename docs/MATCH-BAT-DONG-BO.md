@@ -48,7 +48,7 @@ VALIDATION_ERROR; dữ liệu hồ sơ tài xế hỏng cần sửa và replay, 
 
 ## Chờ, hủy và phục hồi
 
-- Rider có thể gọi confirm accept=false khi FindingDriver để hủy (200 Cancelled).
+- Rider có thể gọi `POST /trips/{id}/cancel` không body khi FindingDriver để hủy (200 Cancelled).
   Kết quả đến sau khi hủy không tạo lời mời.
 - Matching offline: request đã vào queue chờ consumer trở lại. Broker offline:
   request/result còn trong Outbox chờ publish lại.

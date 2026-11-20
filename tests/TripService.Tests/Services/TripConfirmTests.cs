@@ -187,7 +187,6 @@ public class TripConfirmTests
     [InlineData(TripStatus.DriverOffered, true)]
     [InlineData(TripStatus.DriverOffered, false)]
     [InlineData(TripStatus.Cancelled, true)]
-    [InlineData(TripStatus.Cancelled, false)]
     [InlineData(TripStatus.Failed, true)]
     [InlineData(TripStatus.Failed, false)]
     public async Task ConfirmAsync_ShouldThrowInvalidTripStateException_WhenStatusIsNotQuoted(

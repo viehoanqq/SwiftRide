@@ -33,7 +33,13 @@ Postman **không tự đọc** `.env` của service. Nếu muốn import sẵn t
 
 **Không chạy riêng folder 04/05 với `tripId` rỗng.** Bước 3.2 phải trả `202` và lưu `tripId`; bước 3.3 phải chờ `Quoted`; bước 3.4 phải trả `202/FindingDriver`; bước 3.5 phải chờ `DriverOffered`; bước 4.1 phải có offer đúng chuyến cho Driver đang đăng nhập. Collection dừng Runner ngay khi một điều kiện này không đạt. `GET /drivers/me/current-trip` có thể trả một chuyến cũ của Driver, vì vậy không dùng ID đó để thay cho `tripId` của chuyến mới.
 
-Báo giá dùng RabbitMQ + Outbox, xem [luồng và xử lý lỗi](../docs/QUOTE-BAT-DONG-BO.md). Matching ngừng thì Trip tiếp tục Requested; hết thời gian chờ Postman không tự biến chuyến thành Failed. Có thể hủy yêu cầu bằng confirm accept=false khi còn Requested.
+Báo giá dùng RabbitMQ + Outbox, xem [luồng và xử lý lỗi](../docs/QUOTE-BAT-DONG-BO.md). Matching ngừng thì Trip tiếp tục Requested; hết thời gian chờ Postman không tự biến chuyến thành Failed.
+
+**Hủy chuyến riêng:** gọi `POST {{gatewayUrl}}/trips/{{tripId}}/cancel`, Bearer `{{riderToken}}`, không cần body.
+Chỉ chủ chuyến có quyền hủy ở Requested, Quoted hoặc FindingDriver. Thành công trả 200 `{"status":"Cancelled"}`;
+gọi lại vẫn trả 200 và không ghi thêm history. Rider khác trả 403, không tìm thấy chuyến trả 404,
+DriverOffered trở đi trả 409. Nếu kết quả matching vừa cập nhật đồng thời, đọc lại trạng thái sau 409.
+Chạy ca hủy riêng; không tiếp tục các bước nhận chuyến/thanh toán của collection với chuyến đã hủy.
 
 ## CARD giả lập: ba ca riêng
 

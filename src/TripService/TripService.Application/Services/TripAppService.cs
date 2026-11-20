@@ -72,6 +72,10 @@ public class TripAppService(ITripRepository trips,
     // ĐẠT: accept → Fare Accepted + PaymentMethod; từ chối → Cancelled. Chỉ rider của chuyến
     public async Task<ConfirmTripResponse> ConfirmAsync(Guid tripId, Guid riderId, ConfirmTripRequest request)
     {
+        // Keep legacy accept=false callers on the same authorized cancellation path.
+        if (!request.Accept)
+            return new ConfirmTripResponse((await CancelAsync(tripId, riderId)).Status);
+
         var trip = await trips.GetByIdAsync(tripId);
         if (trip is null)
         {
@@ -83,41 +87,34 @@ public class TripAppService(ITripRepository trips,
             throw new ForbiddenException("FORBIDDEN", "Bạn không có quyền thao tác trên chuyến đi này.");
         }
 
-        if (trip.Status != TripStatus.Quoted && !((trip.Status is TripStatus.Requested or TripStatus.FindingDriver) && !request.Accept))
+        if (trip.Status != TripStatus.Quoted)
         {
             throw new InvalidTripStateException(
                 $"INVALID_TRIP_STATE: Không thể xác nhận hoặc từ chối chuyến đi khi đang ở trạng thái '{trip.Status}'.");
         }
 
-        if (!request.Accept)
+        if (string.IsNullOrWhiteSpace(request.PaymentMethod))
         {
-            trip.Cancel();
+            throw new ValidationException("Phương thức thanh toán là bắt buộc khi chấp nhận chuyến đi.");
         }
-        else
+
+        if (!Enum.TryParse<PaymentMethod>(request.PaymentMethod, ignoreCase: true, out var paymentMethod)
+            || !Enum.IsDefined(paymentMethod)
+            || !string.Equals(request.PaymentMethod, paymentMethod.ToString(), StringComparison.OrdinalIgnoreCase))
         {
-            if (string.IsNullOrWhiteSpace(request.PaymentMethod))
-            {
-                throw new ValidationException("Phương thức thanh toán là bắt buộc khi chấp nhận chuyến đi.");
-            }
-
-            if (!Enum.TryParse<PaymentMethod>(request.PaymentMethod, ignoreCase: true, out var paymentMethod)
-                || !Enum.IsDefined(paymentMethod)
-                || !string.Equals(request.PaymentMethod, paymentMethod.ToString(), StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ValidationException("Phương thức thanh toán không hợp lệ. Chỉ chấp nhận WALLET hoặc CARD.");
-            }
-
-            if (paymentMethod == PaymentMethod.Card &&
-                (string.IsNullOrWhiteSpace(request.CardToken) || request.CardToken.Length > 100))
-                throw new ValidationException("CARD yêu cầu CardToken hợp lệ (tối đa 100 ký tự).");
-            if (paymentMethod == PaymentMethod.Wallet && request.CardToken is not null)
-                throw new ValidationException("WALLET không nhận CardToken.");
-
-            trip.Confirm(paymentMethod);
-            trip.Fare!.CardToken = request.CardToken;
-
-            RequestMatch(trip);
+            throw new ValidationException("Phương thức thanh toán không hợp lệ. Chỉ chấp nhận WALLET hoặc CARD.");
         }
+
+        if (paymentMethod == PaymentMethod.Card &&
+            (string.IsNullOrWhiteSpace(request.CardToken) || request.CardToken.Length > 100))
+            throw new ValidationException("CARD yêu cầu CardToken hợp lệ (tối đa 100 ký tự).");
+        if (paymentMethod == PaymentMethod.Wallet && request.CardToken is not null)
+            throw new ValidationException("WALLET không nhận CardToken.");
+
+        trip.Confirm(paymentMethod);
+        trip.Fare!.CardToken = request.CardToken;
+
+        RequestMatch(trip);
 
         await trips.SaveChangesAsync();
         return new ConfirmTripResponse(trip.Status.ToString());
@@ -337,16 +334,23 @@ public class TripAppService(ITripRepository trips,
             throw new ValidationException($"{label} phải có tọa độ và địa chỉ hợp lệ.");
         }
     }
-    public async Task CancelTripAsync(
-        Guid tripId,
-        CancellationToken cancellationToken)
+    public async Task<CancelTripResponse> CancelAsync(Guid tripId, Guid riderId)
     {
-        var trip = await trips.GetByIdAsync(tripId);
-        if (trip is not null)
-        {
-            trip.Cancel();
-            await trips.SaveChangesAsync();
-        }
+        var trip = await trips.GetByIdAsync(tripId)
+            ?? throw new NotFoundException("TRIP_NOT_FOUND", "Không tìm thấy chuyến đi.");
+        if (trip.RiderId != riderId)
+            throw new ForbiddenException("FORBIDDEN", "Bạn không có quyền hủy chuyến đi này.");
+
+        // A repeated cancellation returns the result without duplicating history.
+        if (trip.Status == TripStatus.Cancelled)
+            return new CancelTripResponse(trip.Status.ToString());
+        if (trip.Status is not (TripStatus.Requested or TripStatus.Quoted or TripStatus.FindingDriver))
+            throw new InvalidTripStateException(
+                $"INVALID_TRIP_STATE: Không thể hủy chuyến đi khi đang ở trạng thái '{trip.Status}'.");
+
+        trip.Cancel(); // Dispatch to the current State; TransitionTo records history.
+        await trips.SaveChangesAsync(); // RowVersion prevents overwriting a concurrent match result.
+        return new CancelTripResponse(trip.Status.ToString());
     }
 
     public async Task<TripDriverActionResponse> UpdateTripStatusAsync(

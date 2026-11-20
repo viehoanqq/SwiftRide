@@ -56,6 +56,15 @@ public class TripsController(TripAppService tripService, ITripDriverWorkflow tri
             ? AcceptedAtAction(nameof(GetById), new { id }, result) : Ok(result);
     }
 
+    [HttpPost("{id:guid}/cancel")]
+    [Authorize(Roles = "Rider")]
+    [ProducesResponseType(typeof(CancelTripResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CancelTripResponse>> Cancel(Guid id)
+        => Ok(await tripService.CancelAsync(id, UserId));
+
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<TripDetailDto>> GetById(Guid id)
     {
