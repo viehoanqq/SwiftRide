@@ -4,6 +4,11 @@ Import [collection WALLET](SwiftRide-EndToEnd.postman_collection.json), [collect
 
 ## Chuẩn bị
 
+**Ca kiểm tra nhanh 30 giây:** import [WalletExpiry30s](SwiftRide-WalletExpiry30s.postman_collection.json)
+và chạy theo [hướng dẫn](POSTMAN-WALLET-EXPIRY-30S.md). Collection kiểm tra confirm thiếu tiền hai lần,
+giữ Quoted, worker tự Cancelled theo hạn gốc; ví/ledger không đổi và không có payment.
+Đặt `QuoteConfirmationTimeoutSeconds=30`, restart Trip và dùng Runner delay **0 ms** cho riêng ca này.
+
 **Confirm WALLET kiểm tra ví tại backend:** thiếu tiền trả 409 INSUFFICIENT_FUNDS và giữ Quoted;
 không chuyển sang FindingDriver. Báo giá chưa confirm thành công sẽ tự hủy sau 300 giây,
 theo cấu hình Trip trong appsettings. Xem [kiểm tra ví và hết hạn](../docs/WALLET-CONFIRM-VA-HET-HAN-BAO-GIA.md).

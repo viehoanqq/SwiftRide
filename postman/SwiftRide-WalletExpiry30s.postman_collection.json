@@ -1,0 +1,827 @@
+{
+  "info": {
+    "name": "SwiftRide - Wallet Insufficient & Quote Auto Cancel (30s)",
+    "description": "Chạy toàn collection, Runner delay=0. Trip QuoteConfirmationTimeoutSeconds=30, QuoteExpiryPollSeconds=5, restart Trip; Payment và Matching phải online. Không gọi /cancel, không sửa DB. Confirm thiếu tiền hai lần, lần 2 khoảng giây 15; worker phải hủy theo hạn gốc. Xem POSTMAN-WALLET-EXPIRY-30S.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "gatewayUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "expiryRiderPhone",
+      "value": "0900000002",
+      "type": "string"
+    },
+    {
+      "key": "expiryRiderPassword",
+      "value": "123456",
+      "type": "string"
+    },
+    {
+      "key": "expiryDriverPhone",
+      "value": "0910000002",
+      "type": "string"
+    },
+    {
+      "key": "expiryDriverPassword",
+      "value": "123456",
+      "type": "string"
+    },
+    {
+      "key": "expiryDropoffLat",
+      "value": "10.95",
+      "type": "string"
+    },
+    {
+      "key": "expiryDropoffLng",
+      "value": "106.82",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Đăng nhập Rider",
+      "request": {
+        "method": "POST",
+        "url": "{{gatewayUrl}}/auth/login",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"{{expiryRiderPhone}}\",\n  \"password\": \"{{expiryRiderPassword}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.unset('expiryRiderToken');"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 200',()=>pm.response.to.have.status(200));",
+              "if(passed) {",
+              "const d=pm.response.json();",
+              "verify('Đúng role và có token',()=>{pm.expect(d.user.role).to.eql('Rider');pm.expect(d.accessToken).to.be.a('string').and.not.empty;});",
+              "if(passed)pm.collectionVariables.set('expiryRiderToken',d.accessToken);",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Đăng nhập Driver",
+      "request": {
+        "method": "POST",
+        "url": "{{gatewayUrl}}/auth/login",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "auth": {
+          "type": "noauth"
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone\": \"{{expiryDriverPhone}}\",\n  \"password\": \"{{expiryDriverPassword}}\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.unset('expiryDriverToken');"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 200',()=>pm.response.to.have.status(200));",
+              "if(passed) {",
+              "const d=pm.response.json();",
+              "verify('Đúng role và có token',()=>{pm.expect(d.user.role).to.eql('Driver');pm.expect(d.accessToken).to.be.a('string').and.not.empty;});",
+              "if(passed)pm.collectionVariables.set('expiryDriverToken',d.accessToken);",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Driver Available gần điểm đón",
+      "request": {
+        "method": "POST",
+        "url": "{{gatewayUrl}}/availability/online",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{expiryDriverToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"lat\": 10.7725,\n  \"lng\": 106.698\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 200',()=>pm.response.to.have.status(200));",
+              "if(passed) {",
+              "verify('Available',()=>pm.expect(pm.response.json().status).to.eql('Available'));",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ghi nhận số dư và ledger trước test",
+      "request": {
+        "method": "GET",
+        "url": "{{gatewayUrl}}/wallets/me",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{expiryRiderToken}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 200',()=>pm.response.to.have.status(200));",
+              "if(passed) {",
+              "const wallet=pm.response.json();",
+              "verify('Số dư hợp lệ',()=>pm.expect(wallet.balance).to.be.a('number').and.at.least(0));",
+              "if(passed)pm.collectionVariables.set('expiryWalletBefore',JSON.stringify(wallet));",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tạo chuyến có giá lớn hơn số dư",
+      "request": {
+        "method": "POST",
+        "url": "{{gatewayUrl}}/trips",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{expiryRiderToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"pickup\": {\"lat\": 10.7725, \"lng\": 106.698, \"address\": \"Chợ Bến Thành\"},\n  \"dropoff\": {\"lat\": {{expiryDropoffLat}}, \"lng\": {{expiryDropoffLng}}, \"address\": \"Điểm đến kiểm tra ví thiếu tiền\"}\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.unset('expiryTripId');pm.collectionVariables.unset('expiryHistory');pm.collectionVariables.unset('expiryObservedAt');"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 202',()=>pm.response.to.have.status(202));",
+              "if(passed) {",
+              "const trip=pm.response.json();",
+              "verify('202 Requested và có tripId',()=>{pm.expect(trip.tripId).to.be.a('string').and.not.empty;pm.expect(trip.status).to.eql('Requested');});",
+              "if(passed)pm.collectionVariables.set('expiryTripId',trip.tripId);",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chờ Quoted và xác nhận điều kiện THIẾU TIỀN",
+      "request": {
+        "method": "GET",
+        "url": "{{gatewayUrl}}/trips/{{expiryTripId}}",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{expiryRiderToken}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.collectionVariables.get('expiryTripId')) {",
+              "pm.test('Đã có expiryTripId',()=>pm.expect.fail('Chạy collection từ đầu'));",
+              "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
+              "}",
+              "if(pm.collectionVariables.get('expiryTripId')) {",
+              "let ready=false;let last='';",
+              "try {",
+              " for(let i=0;i<30;i++) {",
+              "  const r=await pm.sendRequest({url:pm.variables.replaceIn('{{gatewayUrl}}')+'/trips/'+pm.collectionVariables.get('expiryTripId'),method:'GET',header:{Authorization:'Bearer '+pm.collectionVariables.get('expiryRiderToken')}});",
+              "  if(r.code!==200){last='HTTP '+r.code;break;}",
+              "  last=r.json().status;",
+              "  if(last==='Quoted'){ready=true;break;}",
+              "  if(last!=='Requested')break;",
+              "  await new Promise(resolve=>setTimeout(resolve,1000));",
+              " }",
+              "}catch(e){last=e.message;}",
+              "pm.test('Chờ Quoted',()=>pm.expect(ready,last).to.eql(true));",
+              "if(!ready){pm.execution.setNextRequest(null);pm.execution.skipRequest();}",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 200',()=>pm.response.to.have.status(200));",
+              "if(passed) {",
+              "const trip=pm.response.json();",
+              "const wallet=JSON.parse(pm.collectionVariables.get('expiryWalletBefore'));",
+              "verify('Đúng chuyến Quoted/Pending',()=>{pm.expect(trip.id).to.eql(pm.collectionVariables.get('expiryTripId'));pm.expect(trip.status).to.eql('Quoted');pm.expect(trip.fare.status).to.eql('Pending');});",
+              "verify('Giá thực tế lớn hơn số dư — không giả lập balance',()=>pm.expect(trip.fare.price,'Ví đủ tiền: đổi Rider ít tiền hoặc điểm đến xa hơn; ca này phải thiếu tiền').to.be.above(wallet.balance));",
+              "if(passed){pm.collectionVariables.set('expiryHistory',JSON.stringify(trip.history));pm.collectionVariables.set('expiryObservedAt',Date.now());}",
+              "console.log('TripId:',trip.id,'Giá:',trip.fare?.price,'Số dư:',wallet.balance);",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Confirm WALLET lần 1 — 409 INSUFFICIENT_FUNDS",
+      "request": {
+        "method": "POST",
+        "url": "{{gatewayUrl}}/trips/{{expiryTripId}}/confirm",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{expiryRiderToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"accept\": true,\n  \"paymentMethod\": \"WALLET\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.collectionVariables.get('expiryTripId')) {",
+              "pm.test('Đã có expiryTripId',()=>pm.expect.fail('Chạy collection từ đầu'));",
+              "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 409',()=>pm.response.to.have.status(409));",
+              "if(passed) {",
+              "verify('Đúng lỗi thiếu tiền',()=>pm.expect(pm.response.json().code).to.eql('INSUFFICIENT_FUNDS'));",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sau lần 1: giữ Quoted, không thêm history",
+      "request": {
+        "method": "GET",
+        "url": "{{gatewayUrl}}/trips/{{expiryTripId}}",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{expiryRiderToken}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.collectionVariables.get('expiryTripId')) {",
+              "pm.test('Đã có expiryTripId',()=>pm.expect.fail('Chạy collection từ đầu'));",
+              "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 200',()=>pm.response.to.have.status(200));",
+              "if(passed) {",
+              "const trip=pm.response.json();",
+              "verify('Vẫn Quoted/Pending, chưa tìm tài xế',()=>{",
+              "pm.expect(trip.id).to.eql(pm.collectionVariables.get('expiryTripId'));",
+              "pm.expect(trip.status).to.eql('Quoted');pm.expect(trip.fare.status).to.eql('Pending');",
+              "pm.expect(trip.driver).to.eql(null);",
+              "pm.expect(trip.history).to.deep.eql(JSON.parse(pm.collectionVariables.get('expiryHistory')));",
+              "});",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Khoảng giây 15: confirm lại vẫn thiếu tiền",
+      "request": {
+        "method": "POST",
+        "url": "{{gatewayUrl}}/trips/{{expiryTripId}}/confirm",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{expiryRiderToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"accept\": true,\n  \"paymentMethod\": \"WALLET\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.collectionVariables.get('expiryTripId')) {",
+              "pm.test('Đã có expiryTripId',()=>pm.expect.fail('Chạy collection từ đầu'));",
+              "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
+              "}",
+              "if(pm.collectionVariables.get('expiryTripId')) {",
+              " const start=Number(pm.collectionVariables.get('expiryObservedAt'));",
+              " if(!Number.isFinite(start)||start<=0){pm.test('Có mốc bắt đầu',()=>pm.expect.fail('Chạy từ đầu'));pm.execution.setNextRequest(null);pm.execution.skipRequest();}",
+              " else {const wait=15000-(Date.now()-start);if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));}",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 409',()=>pm.response.to.have.status(409));",
+              "if(passed) {",
+              "verify('Đúng lỗi thiếu tiền',()=>pm.expect(pm.response.json().code).to.eql('INSUFFICIENT_FUNDS'));",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sau lần 2: vẫn Quoted, không bắt đầu workflow mới",
+      "request": {
+        "method": "GET",
+        "url": "{{gatewayUrl}}/trips/{{expiryTripId}}",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{expiryRiderToken}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.collectionVariables.get('expiryTripId')) {",
+              "pm.test('Đã có expiryTripId',()=>pm.expect.fail('Chạy collection từ đầu'));",
+              "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 200',()=>pm.response.to.have.status(200));",
+              "if(passed) {",
+              "const trip=pm.response.json();",
+              "verify('Vẫn Quoted/Pending, chưa tìm tài xế',()=>{",
+              "pm.expect(trip.id).to.eql(pm.collectionVariables.get('expiryTripId'));",
+              "pm.expect(trip.status).to.eql('Quoted');pm.expect(trip.fare.status).to.eql('Pending');",
+              "pm.expect(trip.driver).to.eql(null);",
+              "pm.expect(trip.history).to.deep.eql(JSON.parse(pm.collectionVariables.get('expiryHistory')));",
+              "});",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chờ WORKER tự hủy — không gọi /cancel",
+      "request": {
+        "method": "GET",
+        "url": "{{gatewayUrl}}/trips/{{expiryTripId}}",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{expiryRiderToken}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.collectionVariables.get('expiryTripId')) {",
+              "pm.test('Đã có expiryTripId',()=>pm.expect.fail('Chạy collection từ đầu'));",
+              "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
+              "}",
+              "if(pm.collectionVariables.get('expiryTripId')) {",
+              " const limit=Number(pm.collectionVariables.get('expiryObservedAt'))+42000;",
+              " let done=false;let last='';",
+              " try {",
+              "  while(Date.now()<limit) {",
+              "   const r=await pm.sendRequest({url:pm.variables.replaceIn('{{gatewayUrl}}')+'/trips/'+pm.collectionVariables.get('expiryTripId'),method:'GET',header:{Authorization:'Bearer '+pm.collectionVariables.get('expiryRiderToken')}});",
+              "   if(r.code!==200){last='HTTP '+r.code;break;}",
+              "   last=r.json().status;",
+              "   if(last==='Cancelled'){done=true;break;}",
+              "   if(last!=='Quoted')break;",
+              "   await new Promise(resolve=>setTimeout(resolve,1000));",
+              "  }",
+              " }catch(e){last=e.message;}",
+              " pm.test('Worker tự hủy trong cửa sổ 30s + thời gian quét',()=>pm.expect(done,'Trạng thái cuối: '+last+'; kiểm tra appsettings=30, restart Trip, worker và log').to.eql(true));",
+              " if(!done){pm.execution.setNextRequest(null);pm.execution.skipRequest();}",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 200',()=>pm.response.to.have.status(200));",
+              "if(passed) {",
+              "const trip=pm.response.json();",
+              "const before=JSON.parse(pm.collectionVariables.get('expiryHistory'));",
+              "verify('Cancelled, fare Rejected, không gán Driver',()=>{pm.expect(trip.id).to.eql(pm.collectionVariables.get('expiryTripId'));pm.expect(trip.status).to.eql('Cancelled');pm.expect(trip.fare.status).to.eql('Rejected');pm.expect(trip.driver).to.eql(null);});",
+              "verify('Chỉ thêm đúng một dòng Quoted → Cancelled',()=>{pm.expect(trip.history.length).to.eql(before.length+1);pm.expect(trip.history.slice(0,before.length)).to.deep.eql(before);pm.expect(trip.history.at(-1).from).to.eql('Quoted');pm.expect(trip.history.at(-1).to).to.eql('Cancelled');});",
+              "const utc=s=>Date.parse(/(?:Z|[+-]\\d{2}:\\d{2})$/i.test(s)?s:s+'Z');",
+              "const quoted=before.find(h=>h.to==='Quoted');",
+              "const seconds=(utc(trip.history.at(-1).at)-utc(quoted.at))/1000;",
+              "verify('Hủy theo hạn gốc 30s, không gia hạn từ confirm lần 2',()=>{pm.expect(seconds).to.be.at.least(29);pm.expect(seconds).to.be.below(42);});",
+              "if(passed)pm.collectionVariables.set('expiryCancelledHistory',JSON.stringify(trip.history));",
+              "console.log('Thời gian từ Quoted đến Cancelled (giây):',seconds);",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Confirm sau khi đã tự hủy — 409",
+      "request": {
+        "method": "POST",
+        "url": "{{gatewayUrl}}/trips/{{expiryTripId}}/confirm",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{expiryRiderToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"accept\": true,\n  \"paymentMethod\": \"WALLET\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.collectionVariables.get('expiryTripId')) {",
+              "pm.test('Đã có expiryTripId',()=>pm.expect.fail('Chạy collection từ đầu'));",
+              "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 409',()=>pm.response.to.have.status(409));",
+              "if(passed) {",
+              "verify('Đã Cancelled nên trạng thái không hợp lệ',()=>pm.expect(pm.response.json().code).to.eql('INVALID_TRIP_STATE'));",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Kiểm tra không có payment",
+      "request": {
+        "method": "GET",
+        "url": "{{gatewayUrl}}/payments/by-trip/{{expiryTripId}}",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{expiryRiderToken}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.collectionVariables.get('expiryTripId')) {",
+              "pm.test('Đã có expiryTripId',()=>pm.expect.fail('Chạy collection từ đầu'));",
+              "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 404',()=>pm.response.to.have.status(404));",
+              "if(passed) {",
+              "verify('PAYMENT_NOT_FOUND đúng nghiệp vụ',()=>pm.expect(pm.response.json().code).to.eql('PAYMENT_NOT_FOUND'));",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ví và ledger không đổi",
+      "request": {
+        "method": "GET",
+        "url": "{{gatewayUrl}}/wallets/me",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{expiryRiderToken}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 200',()=>pm.response.to.have.status(200));",
+              "if(passed) {",
+              "verify('Không trừ tiền hoặc tạo ledger',()=>pm.expect(pm.response.json()).to.deep.eql(JSON.parse(pm.collectionVariables.get('expiryWalletBefore'))));",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "History không thêm sau confirm bị từ chối",
+      "request": {
+        "method": "GET",
+        "url": "{{gatewayUrl}}/trips/{{expiryTripId}}",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{expiryRiderToken}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if(!pm.collectionVariables.get('expiryTripId')) {",
+              "pm.test('Đã có expiryTripId',()=>pm.expect.fail('Chạy collection từ đầu'));",
+              "pm.execution.setNextRequest(null);pm.execution.skipRequest();",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "let passed=true;",
+              "function verify(name, fn) { pm.test(name, () => { try { fn(); } catch(e) { passed=false; throw e; } }); }",
+              "verify('HTTP 200',()=>pm.response.to.have.status(200));",
+              "if(passed) {",
+              "const trip=pm.response.json();",
+              "verify('Vẫn Cancelled, history không đổi',()=>{pm.expect(trip.status).to.eql('Cancelled');pm.expect(trip.history).to.deep.eql(JSON.parse(pm.collectionVariables.get('expiryCancelledHistory')));});",
+              "pm.execution.setNextRequest(null);",
+              "}",
+              "if(!passed) pm.execution.setNextRequest(null);"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

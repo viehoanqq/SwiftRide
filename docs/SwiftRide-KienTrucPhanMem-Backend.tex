@@ -30,9 +30,6 @@
 \setlength{\parindent}{0pt}
 \setlength{\emergencystretch}{3em}
 
-% Dam bao moi so do TikZ luon dung gian dong don (tranh \onehalfspacing lam phinh chieu cao hop)
-\tikzset{every picture/.append style={execute at begin picture={\singlespacing}}}
-
 % Dinh dang caption bang va hinh ro rang
 \captionsetup{font=small, labelfont=bf, skip=6pt}
 
@@ -184,7 +181,7 @@ Báo cáo này tập trung phân tích chuyên sâu và toàn diện \textbf{ph�
 \begin{enumerate}[leftmargin=1.6em]
     \item \textbf{Giai đoạn 1 -- Định danh \& Đồng bộ tài khoản qua Outbox:} Người dùng gửi \texttt{POST /auth/register} qua API Gateway tới \textbf{Identity Service}. Dịch vụ băm mật khẩu bằng BCrypt, lưu bản ghi \texttt{Users} và ghi nguyên tử sự kiện \texttt{UserRegistered} (kèm \texttt{DriverRegistered} nếu vai trò là \texttt{Driver}) vào bảng \texttt{OutboxMessages}. Worker nền phát sự kiện lên RabbitMQ để \textbf{Payment Service} khởi tạo ví \texttt{Account} số dư $0$ và \textbf{Matching Service} khởi tạo hồ sơ không gian của tài xế trên MongoDB.
     \item \textbf{Giai đoạn 2 -- Khởi tạo chuyến \& Báo giá bất đồng bộ qua RabbitMQ:} Hành khách gửi \texttt{POST /trips} kèm tọa độ đón/trả. \textbf{Trip Service} lưu nguyên tử Aggregate \texttt{Trip} ở trạng thái \texttt{Requested}, \texttt{TripLocation}, \texttt{TripStatusHistory} cùng sự kiện \texttt{QuoteRequested} vào SQL Outbox và phản hồi ngay \texttt{202 Accepted} (\texttt{Location: /trips/\{id\}}, các trường giá tạm thời là \texttt{null}). \textbf{Matching \& Pricing Service} tiêu thụ \texttt{QuoteRequested}, kiểm tra tài xế \texttt{Available} trong bán kính $5\text{ km}$, tính khoảng cách cầu Haversine và giá theo chiến lược (\texttt{Standard}, \texttt{Surge}, \texttt{Promo}), lưu nguyên tử kết quả kèm trạng thái phát tin vào collection \textbf{Outbox nhúng} \texttt{quoteResults} trên MongoDB. \texttt{QuoteOutboxPublisher} phát \texttt{QuoteCalculated} (hoặc \texttt{QuoteFailed}) để Trip chuyển chuyến sang \texttt{Quoted} (hoặc \texttt{Failed}).
-    \item \textbf{Giai đoạn 3 -- Xác nhận giá, Tìm tài xế bất đồng bộ (\texttt{FindingDriver}) \& Hủy chuyến:} Khi chuyến đã \texttt{Quoted}, hành khách gọi \texttt{POST /trips/\{id\}/confirm} (\texttt{accept = true}) kèm phương thức \texttt{WALLET} hoặc \texttt{CARD}. Trip Service khóa giá \texttt{Accepted}, chuyển trạng thái sang \textbf{\texttt{FindingDriver}}, ghi sự kiện \texttt{MatchRequested} (\texttt{AttemptNo = 1}) vào Outbox trong cùng giao dịch và trả \texttt{202 Accepted}. Matching tiêu thụ \texttt{MatchRequested}, truy vấn chỉ mục \texttt{2dsphere} tìm ứng viên \texttt{Available} gần nhất, lưu vào collection Outbox nhúng \texttt{matchResults} để phát \texttt{DriverMatched} (chuyển chuyến sang \texttt{DriverOffered}) hoặc \texttt{MatchFailed} ($\rightarrow$ \texttt{Failed}). Nếu tài xế gọi \texttt{driver-reject} và số lượt mời chưa đạt ngưỡng $k$ (\texttt{MaxOfferAttempts}), chuyến quay lại \texttt{FindingDriver} (\texttt{202 Accepted}) kèm \texttt{MatchRequested} mới loại trừ toàn bộ \texttt{ExcludeDriverIds} đã mời; nếu đủ $k$ lượt thì chuyển \texttt{Failed}. Trong suốt 3 trạng thái trước khi phát lời mời (\texttt{Requested}, \texttt{Quoted}, \texttt{FindingDriver}), hành khách có thể hủy chuyến qua endpoint riêng \texttt{POST /trips/\{id\}/cancel} (trả \texttt{200 Cancelled}); mọi kết quả báo giá/ghép xe đến muộn sau khi hủy đều bị bỏ qua an toàn.
+    \item \textbf{Giai đoạn 3 -- Kiểm tra ví trước Confirm, Hết hạn báo giá, Tìm tài xế (\texttt{FindingDriver}) \& Hủy chuyến:} Báo giá ở trạng thái \texttt{Quoted} có thời hạn xác nhận cấu hình \texttt{QuoteConfirmationTimeoutSeconds} (mặc định $300\text{s} = 5\text{ phút}$ tính từ \texttt{TripFare.QuotedAt}). Khi hành khách gọi \texttt{POST /trips/\{id\}/confirm} (\texttt{accept = true}): nếu chọn \texttt{WALLET}, Trip Service gọi API nội bộ \texttt{GET /internal/wallets/\{riderId\}/balance} (Service JWT \texttt{payments:read}, timeout 3s, chỉ đọc số dư chứ chưa giữ/trừ tiền) rồi kiểm tra lại hạn báo giá; nếu số dư $< \text{Price}$, hệ thống trả \texttt{409 INSUFFICIENT\_FUNDS}, \textbf{giữ nguyên trạng thái \texttt{Quoted} và không gia hạn \texttt{QuotedAt}} (để khách nạp tiền hoặc đổi sang \texttt{CARD}). Nếu đủ số dư (hoặc dùng \texttt{CARD}), Trip khóa giá \texttt{Accepted}, chuyển sang \textbf{\texttt{FindingDriver}}, ghi \texttt{MatchRequested} vào Outbox và trả \texttt{202 Accepted} để Matching tìm ứng viên gần nhất ($\rightarrow$ \texttt{DriverOffered} hoặc \texttt{Failed}; lặp lại $< k$ lượt nếu \texttt{driver-reject}). Nếu quá 5 phút vẫn ở \texttt{Quoted}, tiến trình nền \texttt{QuoteExpiryWorker} tự động hủy chuyến qua State Pattern (\texttt{Cancelled}); ngoài ra hành khách có thể chủ động gọi \texttt{POST /trips/\{id\}/cancel} ở cả 3 trạng thái \texttt{Requested}, \texttt{Quoted}, \texttt{FindingDriver}.
     \item \textbf{Giai đoạn 4 -- Nhận chuyến chống tranh chấp \& Khóa trạng thái tài xế:} Tài xế được mời gọi \texttt{POST /trips/\{id\}/driver-accept}. Trip Service kết hợp khóa lạc quan \texttt{RowVersion} trên bảng \texttt{Trips} và khóa tư vấn giao dịch \texttt{sys.sp\_getapplock} theo khóa \texttt{driver-assignment:\{DriverId\}} để đảm bảo tại một thời điểm một tài xế không thể nhận hai chuyến song song. Chuyến chuyển sang \texttt{DriverAccepted} và ghi sự kiện \texttt{TripAccepted} vào Outbox; Matching tiêu thụ sự kiện này để chuyển tài xế sang \texttt{Busy} gắn kèm \texttt{StatusTripId = TripId}.
     \item \textbf{Giai đoạn 5 -- Thực thi hành trình theo Máy trạng thái:} Tài xế lần lượt cập nhật tiến độ qua các endpoint \texttt{en-route} (\texttt{EnRoute}), \texttt{pickup} (\texttt{PickedUp}) và \texttt{dropoff} (\texttt{DroppedOff}). Bất kỳ thao tác nhảy cóc trạng thái (ví dụ gọi \texttt{dropoff} khi chưa \texttt{pickup}) hoặc gọi bởi tài xế không sở hữu lời mời đều bị từ chối ngay tại tầng Domain/Application.
     \item \textbf{Giai đoạn 6 -- Kích hoạt Payment Saga nguyên tử tại thời điểm trả khách:} Ngay trong giao dịch CSDL của thao tác \texttt{dropoff}, Trip Service tự động chuyển tiếp \texttt{DroppedOff} $\rightarrow$ \texttt{PaymentPending}, khởi tạo bản ghi \texttt{PaymentSagaInstance} ở trạng thái \texttt{AwaitingPayment} (với hạn chót \texttt{PaymentDeadlineAt = UtcNow + 30s}) và ghi lệnh \texttt{ProcessPayment} (mang khóa chống trùng \texttt{trip:\{TripId\}:payment:v1}) vào bảng \texttt{OutboxMessages}.
@@ -307,9 +304,9 @@ Trong quá trình thiết kế và hoàn thiện hệ thống, nhóm đã ghi nh
 \textbf{Hệ quả:} Tối ưu hóa triệt để hiệu năng và độ an toàn theo đúng bản chất dữ liệu của từng Bounded Context, chấp nhận chi phí cấu hình 3 driver ORM/Data Access khác nhau.
 }
 
-\archbox{ADR-03: Chuyển Báo giá \& Ghép tài xế sang RabbitMQ + Outbox; Giữ REST cho Đối soát Saga}{%
-\textbf{Quyết định:} Toàn bộ các bước chuyển trạng thái nghiệp vụ liên dịch vụ -- bao gồm khởi tạo ví/hồ sơ (\texttt{UserRegistered}, \texttt{DriverRegistered}), \textbf{báo giá cước (\texttt{QuoteRequested} $\rightarrow$ \texttt{QuoteCalculated/Failed})}, \textbf{ghép tài xế (\texttt{MatchRequested} $\rightarrow$ \texttt{DriverMatched/MatchFailed})}, đồng bộ trạng thái tài xế (\texttt{TripAccepted}, \texttt{TripClosed}), thu tiền (\texttt{ProcessPayment}) và hoàn tiền (\texttt{RefundPayment}) -- đều thực thi bất đồng bộ qua \textbf{RabbitMQ + Transactional Outbox} (kết hợp Outbox nhúng một tài liệu nguyên tử trên MongoDB). Giao tiếp \textbf{HTTP REST đồng bộ nội bộ} chỉ giữ lại chuyên biệt cho truy vấn đọc/đối soát chủ động của Saga (\texttt{GET /payments/by-trip/\{tripId\}}, \texttt{GET /payments/refunds/by-key/\{key\}}), trong khi các endpoint \texttt{/quote} và \texttt{/match} cũ chỉ giữ lại để tương thích ngược.\\
-\textbf{Hệ quả:} \texttt{TripService} không còn bị treo hoặc lỗi dây chuyền (\texttt{502/504}) khi \texttt{MatchingService} tạm ngừng; hành khách nhận phản hồi tức thời \texttt{202 Accepted} và có thể chủ động hủy chuyến (\texttt{POST /trips/\{id\}/cancel}) ngay trong lúc chờ báo giá hoặc chờ tìm xe. Đổi lại, client cần thực hiện polling \texttt{GET /trips/\{id\}} để cập nhật kết quả báo giá và lời mời.
+\archbox{ADR-03: Chuyển Báo giá \& Ghép tài xế sang RabbitMQ + Outbox; Giữ REST cho Kiểm tra Ví \& Đối soát Saga}{%
+\textbf{Quyết định:} Toàn bộ các bước chuyển trạng thái nghiệp vụ liên dịch vụ -- bao gồm khởi tạo ví/hồ sơ (\texttt{UserRegistered}, \texttt{DriverRegistered}), \textbf{báo giá cước (\texttt{QuoteRequested} $\rightarrow$ \texttt{QuoteCalculated/Failed})}, \textbf{ghép tài xế (\texttt{MatchRequested} $\rightarrow$ \texttt{DriverMatched/MatchFailed})}, đồng bộ trạng thái tài xế (\texttt{TripAccepted}, \texttt{TripClosed}), thu tiền (\texttt{ProcessPayment}) và hoàn tiền (\texttt{RefundPayment}) -- đều thực thi bất đồng bộ qua \textbf{RabbitMQ + Transactional Outbox}. Giao tiếp \textbf{HTTP REST đồng bộ nội bộ} (timeout 3s, xác thực Service JWT \texttt{payments:read}) chỉ giữ lại cho các truy vấn đọc tức thời không làm thay đổi dữ liệu sang \texttt{PaymentService}: kiểm tra số dư ví trước khi xác nhận chuyến (\texttt{GET /internal/wallets/\{riderId\}/balance}) và đối soát chủ động của Saga (\texttt{GET /payments/by-trip/\{tripId\}}, \texttt{GET /payments/refunds/by-key/\{key\}}).\\
+\textbf{Hệ quả:} \texttt{TripService} không còn bị lỗi dây chuyền khi \texttt{MatchingService} tạm ngừng, đồng thời chặn sớm được các yêu cầu đặt xe \texttt{WALLET} không đủ tiền ngay trước khi phát lệnh tìm tài xế mà không cần giữ/khóa tiền phức tạp trước chuyến đi.
 }
 
 \archbox{ADR-04: Chọn Orchestrated Saga đặt tại Trip Service thay vì Choreography thuần túy}{%
@@ -334,13 +331,13 @@ Hình~\ref{fig:container-arch} mô tả đầy đủ kiến trúc mức Containe
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-    font=\footnotesize,
+    font={\footnotesize\linespread{1.05}\selectfont},
     ext/.style={draw=black, semithick, rounded corners=3pt, minimum width=16.0cm, minimum height=0.85cm, align=center, fill=gray!4},
     gw/.style={draw=black, thick, rounded corners=3pt, minimum width=16.0cm, minimum height=1.25cm, align=center, fill=gray!10},
     svc/.style={draw=black, thick, rounded corners=3pt, text width=3.15cm, minimum width=3.4cm, minimum height=2.05cm, align=center, fill=white},
     db/.style={draw=black, semithick, rounded corners=2pt, text width=3.15cm, minimum width=3.4cm, minimum height=1.25cm, align=center, fill=gray!6},
     mq/.style={draw=black, thick, dashed, rounded corners=3pt, minimum width=16.0cm, minimum height=1.35cm, align=center, fill=gray!4},
-    lbl/.style={fill=white, inner sep=1.5pt, font=\scriptsize},
+    lbl/.style={fill=white, inner sep=1.5pt, font={\scriptsize\linespread{1.05}\selectfont}},
     arr/.style={-{Stealth[length=2.3mm, width=1.7mm]}, semithick},
     syncarr/.style={-{Stealth[length=2.3mm, width=1.7mm]}, thick},
     darr/.style={-{Stealth[length=2.2mm, width=1.6mm]}, densely dashed, semithick}
@@ -377,8 +374,8 @@ Hình~\ref{fig:container-arch} mô tả đầy đủ kiến trúc mức Containe
     \draw[arr] ([xshift=-0.50cm]gw.south -| match.north) -- node[lbl, pos=0.28]{\texttt{/availability}} ([xshift=-0.50cm]match.north);
     \draw[arr] ([xshift=0.50cm]gw.south -| pay.north) -- node[lbl, pos=0.28]{\texttt{GET /wallets, /payments}} ([xshift=0.50cm]pay.north);
 
-    % Internal Synchronous REST call strictly for Saga Reconciliation (routed cleanly in lower band y = -1.45)
-    \draw[syncarr] ([xshift=0.55cm]trip.north) -- ++(0, 0.62cm) -| node[lbl, pos=0.28]{REST đối soát Saga: \texttt{GET /payments/by-trip/*}} ([xshift=-0.55cm]pay.north);
+    % Internal Synchronous REST call strictly for Wallet Pre-check & Saga Reconciliation
+    \draw[syncarr] ([xshift=0.55cm]trip.north) -- ++(0, 0.62cm) -| node[lbl, pos=0.28]{REST nội bộ (\texttt{payments:read}): kiểm tra ví \& đối soát Saga} ([xshift=-0.55cm]pay.north);
 
     % Services -> Databases (through y from -4.125 to -5.425 = 1.30cm gap)
     \draw[arr] (id.south) -- node[lbl]{EF Core} (iddb.north);
@@ -444,53 +441,53 @@ Bên trong mỗi microservice, mã nguồn tuân thủ nghiêm ngặt kiến tr�
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-    font=\footnotesize,
+    font={\footnotesize\linespread{1.05}\selectfont},
     layer/.style={draw=black, thick, rounded corners=3pt, align=center, fill=white, inner sep=5pt},
     bb/.style={draw=black, thick, dashed, rounded corners=3pt, align=center, fill=gray!7, inner sep=5pt},
-    note/.style={draw=black, rounded corners=2.5pt, align=left, fill=gray!4, font=\scriptsize, inner sep=5pt},
+    note/.style={draw=black, rounded corners=2.5pt, align=left, fill=gray!4, font={\scriptsize\linespread{1.05}\selectfont}, inner sep=5pt},
     arr/.style={-{Stealth[length=2.2mm, width=1.6mm]}, semithick},
     darr/.style={-{Stealth[length=2.2mm, width=1.6mm]}, densely dashed, semithick},
-    lbl/.style={fill=white, inner sep=1.6pt, font=\scriptsize}
+    lbl/.style={fill=white, inner sep=1.6pt, font={\scriptsize\linespread{1.05}\selectfont}}
 ]
-    % Outer group box for one Microservice (x: -7.45 to +1.55, y: -4.25 to +4.45)
-    \draw[draw=gray!75, rounded corners=5pt, semithick] (-7.45, -4.25) rectangle (1.55, 4.45);
-    \node[font=\footnotesize\bfseries] at (-2.95, 4.82) {Cấu trúc chuẩn 01 Microservice (\texttt{Identity / Trip / Matching / Payment})};
+    % Outer group box for one Microservice (x: -8.30 to +2.60, y: -4.25 to +4.70)
+    \draw[draw=gray!75, rounded corners=5pt, semithick] (-8.30, -4.25) rectangle (2.60, 4.70);
+    \node[font={\footnotesize\bfseries\linespread{1.05}\selectfont}] at (-2.85, 5.10) {Cấu trúc chuẩn 01 Microservice (\texttt{Identity / Trip / Matching / Payment})};
 
-    % Row 1 (y = 3.15): Api (-5.30, 3.15) and Infrastructure (-0.60, 3.15) -> 1.30cm horizontal gap!
-    \node[layer, text width=3.15cm, minimum width=3.40cm, minimum height=1.85cm] (api) at (-5.30, 3.15)
+    % Row 1 (y = 3.30): Api (-5.70, 3.30) and Infrastructure (0.00, 3.30) -> each strictly 4 lines, 1.35cm gap!
+    \node[layer, text width=4.10cm, minimum width=4.35cm, minimum height=1.85cm] (api) at (-5.70, 3.30)
         {\textbf{\texttt{*.Api} Layer}\\Controllers, Auth/Policies\\\texttt{ExceptionMiddleware}\\\texttt{Program.cs} (DI Root)};
 
-    \node[layer, text width=3.15cm, minimum width=3.40cm, minimum height=1.85cm] (infra) at (-0.60, 3.15)
-        {\textbf{\texttt{*.Infrastructure} Layer}\\EF Core / MongoDriver\\Outbox Workers, Consumers\\HTTP Typed Clients};
+    \node[layer, text width=4.10cm, minimum width=4.35cm, minimum height=1.85cm] (infra) at (0.00, 3.30)
+        {\textbf{\texttt{*.Infrastructure}}\\EF Core / MongoDriver\\Outbox \& Consumers\\HTTP Typed Clients};
 
-    % Row 2 (y = 0.05): Application (-2.95, 0.05) -> >1.30cm vertical gap below Row 1!
-    \node[layer, text width=7.75cm, minimum width=8.10cm, minimum height=1.65cm] (app) at (-2.95, 0.05)
+    % Row 2 (y = 0.15): Application (-2.85, 0.15) -> strictly 3 lines, 1.30cm vertical gap!
+    \node[layer, text width=9.65cm, minimum width=10.05cm, minimum height=1.65cm] (app) at (-2.85, 0.15)
         {\textbf{\texttt{*.Application} Layer}\\Use Cases / AppServices $\cdot$ Saga Transitions \& Coordinators\\DTOs $\cdot$ Cổng trừu tượng (\texttt{IRepository}, \texttt{IUnitOfWork}, \texttt{IPaymentClient})};
 
-    % Row 3 (y = -2.95): Domain (-2.95, -2.95) -> >1.25cm vertical gap below Row 2!
-    \node[layer, text width=7.75cm, minimum width=8.10cm, minimum height=1.75cm, fill=gray!10] (dom) at (-2.95, -2.95)
+    % Row 3 (y = -2.85): Domain (-2.85, -2.85) -> strictly 3 lines, 1.20cm vertical gap!
+    \node[layer, text width=9.65cm, minimum width=10.05cm, minimum height=1.70cm, fill=gray!10] (dom) at (-2.85, -2.85)
         {\textbf{\texttt{*.Domain} Layer (Lõi nghiệp vụ thuần túy)}\\Aggregate Roots, Entities, Value Objects, Enums\\State Hierarchy (\texttt{TripState}), Domain Services (\texttt{PaymentSettlement}, \texttt{PricingCalculator})};
 
-    % Right side: BuildingBlocks (x: +2.85 to +8.95, centered at +5.90 -> 1.30cm gap between outer frames!)
-    \draw[draw=gray!75, rounded corners=5pt, semithick] (2.85, -4.25) rectangle (8.95, 4.45);
-    \node[font=\footnotesize\bfseries] at (5.90, 4.82) {Thư viện nền tảng (\texttt{src/BuildingBlocks})};
+    % Right side: BuildingBlocks (x: +3.80 to +10.50, centered at +7.15)
+    \draw[draw=gray!75, rounded corners=5pt, semithick] (3.80, -4.25) rectangle (10.50, 4.70);
+    \node[font={\footnotesize\bfseries\linespread{1.05}\selectfont}] at (7.15, 5.10) {Thư viện nền tảng (\texttt{src/BuildingBlocks})};
 
-    \node[bb, text width=5.15cm, minimum width=5.45cm, minimum height=1.85cm] (bbmsg) at (5.90, 3.15)
-        {\textbf{\texttt{SwiftRide.Messaging}}\\MassTransit 8 + RabbitMQ Setup\\Exponential Retry \& \texttt{*\_error} DLQ\\\texttt{DotEnvLoader}, Log/Correlation Filters};
+    \node[bb, text width=5.60cm, minimum width=5.90cm, minimum height=1.85cm] (bbmsg) at (7.15, 3.30)
+        {\textbf{\texttt{SwiftRide.Messaging}}\\MassTransit 8 + RabbitMQ\\Bounded Retry \& \texttt{*\_error} DLQ\\\texttt{DotEnvLoader}, Log Filters};
 
-    \node[bb, text width=5.15cm, minimum width=5.45cm, minimum height=1.65cm] (bbcon) at (5.90, 0.05)
-        {\textbf{\texttt{SwiftRide.Contracts}}\\\textbf{0 NuGet Dependencies} (Pure C\#)\\\texttt{IIntegrationEvent}, 18 Event/Saga Records\\\texttt{QueueNames}, \texttt{PaymentProtocol}};
+    \node[bb, text width=5.60cm, minimum width=5.90cm, minimum height=1.65cm] (bbcon) at (7.15, 0.15)
+        {\textbf{\texttt{SwiftRide.Contracts}}\\\textbf{0 NuGet} (Pure C\# Library)\\\texttt{IIntegrationEvent} (18 Events)\\\texttt{QueueNames}, \texttt{PaymentProtocol}};
 
-    \node[note, text width=5.15cm, minimum width=5.45cm, minimum height=1.75cm] (bbrule) at (5.90, -2.95)
-        {\textbf{Quy tắc ranh giới nghiêm ngặt:}\\1. Không service nào tham chiếu service khác.\\2. \texttt{Domain} không biết \texttt{BuildingBlocks}.\\3. \texttt{Application} chỉ biết \texttt{Contracts}, tuyệt đối không dính MassTransit/EF Core.};
+    \node[note, text width=5.60cm, minimum width=5.90cm, minimum height=1.70cm] (bbrule) at (7.15, -2.85)
+        {\textbf{Quy tắc ranh giới nghiêm ngặt:}\\1. Các service không tham chiếu nhau.\\2. \texttt{Domain} không biết \texttt{BuildingBlocks}.\\3. \texttt{Application} chỉ biết \texttt{Contracts}.};
 
     % Internal Dependency Arrows
-    \draw[arr] (api.south) -- node[lbl, left, xshift=-2pt]{depends} ([xshift=-2.35cm]app.north);
-    \draw[arr] (infra.south) -- node[lbl, right, xshift=2pt]{implements} ([xshift=2.35cm]app.north);
+    \draw[arr] (api.south) -- node[lbl, left, xshift=-2pt]{depends} ([xshift=-2.85cm]app.north);
+    \draw[arr] (infra.south) -- node[lbl, right, xshift=2pt]{implements} ([xshift=2.85cm]app.north);
     \draw[arr] (api.east) -- node[lbl]{DI} (infra.west);
     \draw[arr] (app.south) -- node[lbl]{uses} (dom.north);
 
-    % Cross references to BuildingBlocks (across clean 2.08cm horizontal gap!)
+    % Cross references to BuildingBlocks (across clean 2.02cm horizontal gap!)
     \draw[darr] (infra.east) -- node[lbl]{uses} (bbmsg.west);
     \draw[darr] (app.east) -- node[lbl]{uses} (bbcon.west);
     \draw[arr] (bbmsg.south) -- node[lbl]{references} (bbcon.north);
@@ -722,10 +719,10 @@ Hình~\ref{fig:trip-flowchart} biểu diễn trực quan toàn bộ 16 trạng t
 \centering
 \resizebox{0.97\textwidth}{!}{%
 \begin{tikzpicture}[
-    font=\scriptsize,
+    font={\scriptsize\linespread{1.05}\selectfont},
     st/.style={draw=black, semithick, rounded corners=2.5pt, text width=3.95cm, minimum width=4.20cm, minimum height=0.68cm, align=center, fill=white},
     term/.style={draw=black, thick, rounded corners=7pt, text width=3.55cm, minimum width=3.80cm, minimum height=0.72cm, align=center, fill=gray!13},
-    lbl/.style={fill=white, inner sep=1.2pt, font=\scriptsize},
+    lbl/.style={fill=white, inner sep=1.2pt, font={\scriptsize\linespread{1.05}\selectfont}},
     arr/.style={-{Stealth[length=2.0mm, width=1.5mm]}, semithick}
 ]
     % =========================================================
@@ -772,10 +769,10 @@ Hình~\ref{fig:trip-flowchart} biểu diễn trực quan toàn bộ 16 trạng t
     \draw[arr] (s11) -- node[lbl, right, xshift=3pt]{\texttt{PaymentRefunded}} (s12);
 
     % =========================================================
-    % LAN TRAI: 3 duong POST /cancel + Vong lap driver-reject (< k)
+    % LAN TRAI: 3 duong POST /cancel (+ het han bao gia) + Vong lap driver-reject (< k)
     % =========================================================
     \draw[arr] (s1.west) -| node[lbl, pos=0.25, above]{\texttt{POST /cancel}} (tcancel.north);
-    \draw[arr] (s2.west) -- node[lbl, above]{\texttt{POST /cancel}} (tcancel.east);
+    \draw[arr] (s2.west) -- node[lbl, above]{\texttt{/cancel} | quá hạn 5p} (tcancel.east);
     \draw[arr] ([yshift=0.14cm]s3.west) -| node[lbl, pos=0.25, above]{\texttt{POST /cancel}} (tcancel.south);
 
     % DriverOffered -> FindingDriver khi driver-reject va con luot (< k)
@@ -818,7 +815,9 @@ Bảng~\ref{tab:state-matrix} đặc tả đầy đủ điều kiện tiền đ�
 \texttt{(Khởi tạo)} & \texttt{Trip.Create} & \texttt{Requested} & Lưu \texttt{Trip}, \texttt{TripLocation}, \texttt{History} và Outbox \texttt{QuoteRequested}; HTTP trả \texttt{202 Accepted}. \\
 \texttt{Requested} & \texttt{MarkQuoted(fare)} & \texttt{Quoted} & Nhận \texttt{QuoteCalculated} khớp \texttt{CausationId == QuoteRequested.EventId}; khóa dòng \texttt{UPDLOCK}, lưu \texttt{TripFare(Pending)}. \\
 \texttt{Requested} & \texttt{MarkFailed()} & \texttt{Failed} & Nhận \texttt{QuoteFailed} hợp lệ (\texttt{NO\_DRIVER\_AVAILABLE} hoặc \texttt{VALIDATION\_ERROR}). \\
-\texttt{Quoted} & \texttt{Confirm(method)} + \texttt{BeginMatching} & \texttt{FindingDriver} & Đúng \texttt{RiderId}; khóa giá \texttt{Fare.Status = Accepted}, lưu \texttt{PaymentMethod/\ab CardToken}; ghi Outbox \texttt{MatchRequested(\ab AttemptNo=1)}; trả \texttt{202 Accepted}. \\
+\texttt{Quoted} & \texttt{Confirm(WALLET)} \newline (ví thiếu tiền) & Giữ \texttt{Quoted} \newline (\texttt{409 Conflict}) & Gọi \texttt{GET /internal/\ab wallets/\{id\}/\ab balance} $< \text{Price}$: trả \texttt{INSUFFICIENT\_FUNDS}, \textbf{không đặt lại \texttt{QuotedAt}}, không phát \texttt{MatchRequested}. \\
+\texttt{Quoted} & \texttt{Confirm(method)} + \texttt{BeginMatching} & \texttt{FindingDriver} & Báo giá còn hạn \& đủ ví (hoặc \texttt{CARD}); khóa \texttt{Fare = Accepted}; ghi Outbox \texttt{MatchRequested(\ab AttemptNo=1)}; trả \texttt{202 Accepted}. \\
+\texttt{Quoted} & Quá hạn báo giá \newline (\texttt{QuoteExpiryWorker}) & \texttt{Cancelled} & Quá \texttt{QuoteConfirmation\ab TimeoutSeconds} (300s từ \texttt{QuotedAt}): khóa \texttt{UPDLOCK, READPAST}, gọi \texttt{QuotedState.Cancel()} từ chối \texttt{Fare} và hủy chuyến. \\
 \texttt{FindingDriver} & \texttt{OfferDriver} & \texttt{DriverOffered} & Nhận \texttt{DriverMatched} khớp \texttt{CausationId}, \texttt{AttemptNo} và không nằm trong \texttt{ExcludeDriverIds}; tạo \texttt{TripDriverOffer(Pending)}. \\
 \texttt{FindingDriver} & \texttt{MarkFailed()} & \texttt{Failed} & Nhận \texttt{MatchFailed} hợp lệ khi không còn tài xế khả dụng quanh điểm đón. \\
 \texttt{Requested / Quoted / FindingDriver} & \texttt{Cancel()} \newline (\texttt{POST /cancel}) & \texttt{Cancelled} & Chỉ đúng \texttt{RiderId} sở hữu chuyến; đi qua \texttt{TripState.Cancel} (ở \texttt{Quoted} từ chối \texttt{Fare}); kết quả \texttt{Quote/\ab Match} đến muộn sau khi hủy đều bị bỏ qua. \\
@@ -837,41 +836,39 @@ Bảng~\ref{tab:state-matrix} đặc tả đầy đủ điều kiện tiền đ�
 \renewcommand{\arraystretch}{1.0}
 }
 
-\subsection{Thiết kế Endpoint Hủy chuyến Chuyên biệt (\texttt{POST /trips/\{id\}/cancel}) qua State Pattern}
-Khi chuyển báo giá và tìm tài xế sang bất đồng bộ, hành khách cần khả năng hủy chuyến ngay trong lúc đang chờ báo giá (\texttt{Requested}), sau khi xem giá (\texttt{Quoted}) hoặc trong lúc hệ thống đang tìm xe (\texttt{FindingDriver}). Thay vì nhồi nhét chung vào lệnh xác nhận giá, hệ thống tách riêng endpoint \texttt{POST /trips/\{id\}/cancel} (không cần request body) tuân thủ chặt chẽ 4 nguyên tắc kiến trúc:
+\subsection{Hủy chuyến (\texttt{POST /cancel}), Kiểm tra Ví trước Confirm và Tự hủy Báo giá Hết hạn}
+Khi chuyển báo giá và tìm tài xế sang bất đồng bộ, hệ thống bổ sung ba cơ chế bảo vệ chặt chẽ cho giai đoạn trước khi tài xế nhận chuyến:
 \begin{enumerate}[nosep]
-    \item \textbf{Giới hạn đúng phạm vi an toàn tiền lời mời:} \texttt{CancelAsync} kiểm tra đúng chủ chuyến (\texttt{trip.RiderId == riderId}) và chỉ cho phép hủy ở đúng 3 trạng thái \texttt{Requested}, \texttt{Quoted}, \texttt{FindingDriver} (khi chưa có tài xế nào nhận lời mời hoặc bị khóa trạng thái \texttt{Busy}, và chưa phát sinh thu tiền nên không cần hoàn tiền).
-    \item \textbf{Đi xuyên qua State Pattern:} Tuyệt đối không gán trực tiếp \texttt{trip.Status = Cancelled} mà gọi \texttt{trip.Cancel()} ủy quyền cho \texttt{RequestedState}, \texttt{QuotedState} (từ chối \texttt{Fare} trước khi hủy) và \texttt{FindingDriverState}, tự động lưu vết \texttt{TripStatusHistory}.
-    \item \textbf{Tính Idempotent khi gọi lặp:} Nếu chuyến đã ở \texttt{Cancelled}, hàm trả ngay \texttt{200 OK} (\texttt{"Cancelled"}) mà không ghi lặp dòng lịch sử thứ hai; đồng thời vẫn tương thích ngược với client cũ gửi \texttt{POST /confirm \{ "accept": false \}}.
-    \item \textbf{Chống xung đột với Consumer đến muộn:} \texttt{SaveChangesAsync} kiểm tra \texttt{RowVersion} để không ghi đè nhầm nếu \texttt{DriverMatched} vừa commit trước đó một mili-giây; ngược lại, nếu hủy thành công trước, cả \texttt{TripQuoteResultHandler} và \texttt{TripMatchResultHandler} đều khóa dòng \texttt{UPDLOCK, ROWLOCK}, thấy \texttt{trip.Status == Cancelled} nên chủ động bỏ qua kết quả đến muộn mà không tạo lời mời.
+    \item \textbf{Endpoint hủy chuyến riêng \texttt{POST /trips/\{id\}/cancel} qua State Pattern:} Không cần request body, chỉ cho phép chủ chuyến (\texttt{trip.RiderId == riderId}) hủy ở đúng 3 trạng thái \texttt{Requested}, \texttt{Quoted}, \texttt{FindingDriver}. Hàm gọi \texttt{trip.Cancel()} xuyên qua \texttt{RequestedState}, \texttt{QuotedState} (từ chối \texttt{Fare}) và \texttt{FindingDriverState}; gọi lặp trả \texttt{200 Cancelled} idempotent không nhân bản \texttt{TripStatusHistory}, kết hợp \texttt{RowVersion} và bỏ qua mọi kết quả \texttt{Quote/\ab Match} đến muộn.
+    \item \textbf{Kiểm tra số dư ví trước khi xác nhận \texttt{WALLET} (Pre-Confirmation Balance Check):} Để tránh phát lệnh tìm tài xế vô ích cho khách không đủ tiền trong ví, \texttt{ConfirmAsync} kiểm tra hạn báo giá, sau đó gọi REST nội bộ \texttt{GET /internal/wallets/\{riderId\}/balance} (Service JWT \texttt{payments:read}, timeout 3s, chỉ đọc cột \texttt{balance} mà không tải toàn bộ sổ cái và chưa khóa/trừ tiền). Ngay sau lượt gọi HTTP, hệ thống kiểm tra lại hạn báo giá lần hai rồi đối chiếu \texttt{wallet.Balance < trip.Fare.Price}: nếu thiếu tiền thì trả \texttt{409 INSUFFICIENT\_FUNDS}, \textbf{giữ nguyên trạng thái \texttt{Quoted} và tuyệt đối không gia hạn \texttt{QuotedAt}}. Phương thức \texttt{CARD} không kiểm tra ví Rider; bước thu tiền sau \texttt{dropoff} vẫn khóa tài khoản và kiểm tra lại số dư thực tế.
+    \item \textbf{Tự động hủy báo giá hết hạn bằng \texttt{QuoteExpiryWorker}:} Hạn xác nhận được cấu hình trong \texttt{TripWorkflowOptions} (\texttt{QuoteConfirmationTimeoutSeconds = 300}, \texttt{QuoteExpiryPollSeconds = 5}, \texttt{QuoteExpiryBatchSize = 50}). Worker quét các chuyến còn đang \texttt{Quoted} quá hạn kể từ mốc \texttt{TripFare.QuotedAt} với gợi ý khóa \texttt{WITH (UPDLOCK, READPAST, ROWLOCK)} (chống xử lý trùng giữa nhiều instance) và gọi \texttt{trip.Cancel()} qua State Pattern. Các chuyến đã kịp chuyển sang \texttt{FindingDriver} không bị worker này chạm tới.
 \end{enumerate}
 
-\begin{lstlisting}[caption={Hien thuc FindingDriverState va CancelAsync bao toan State Pattern va Idempotency}]
-public sealed class FindingDriverState : TripState
+\begin{lstlisting}[caption={Kiem tra so du vi truoc Confirm, huy chuyen CancelAsync va tu huy bao gia QuoteExpiryDispatcher}]
+// 1. Kiem tra han bao gia kep & so du vi Rider truoc khi phat MatchRequested (TripAppService.cs)
+await EnsureQuoteNotExpiredAsync(trip);
+if (paymentMethod == PaymentMethod.Wallet)
 {
-    public override TripStatus Status => TripStatus.FindingDriver;
-    public override void OfferDriver(Trip trip, Guid driverId, int attemptNo, double distanceToPickupKm)
-        => trip.AddDriverOffer(driverId, attemptNo, distanceToPickupKm);
-    public override void MarkFailed(Trip trip) => trip.TransitionTo(TripStatus.Failed);
-    public override void Cancel(Trip trip) => trip.TransitionTo(TripStatus.Cancelled);
+    var wallet = await paymentClient.GetRiderBalanceAsync(trip.RiderId, cancellationToken);
+    await EnsureQuoteNotExpiredAsync(trip); // Kiem tra lai phong HTTP vua vuot qua deadline
+    if (wallet.Balance < trip.Fare!.Price)
+        throw new ConflictException(PaymentFailureReasons.InsufficientFunds,
+            "So du vi khong du de xac nhan chuyen di. Vui long nap tien hoac chon CARD.");
 }
+trip.Confirm(paymentMethod);
+RequestMatch(trip); // -> FindingDriver + Outbox MatchRequested
 
-public async Task<CancelTripResponse> CancelAsync(Guid tripId, Guid riderId)
+// 2. Worker quet va tu huy bao gia qua han qua State Pattern (QuoteExpiryWorker.cs)
+var due = await db.Trips.FromSqlRaw("""
+    SELECT TOP ({0}) t.* FROM dbo.Trips t WITH (UPDLOCK, READPAST, ROWLOCK)
+    INNER JOIN dbo.TripFares f ON f.TripId = t.Id
+    WHERE t.Status = 'Quoted' AND f.QuotedAt <= DATEADD(second, -{1}, SYSUTCDATETIME())
+    ORDER BY f.QuotedAt, t.Id
+    """, options.QuoteExpiryBatchSize, options.QuoteConfirmationTimeoutSeconds).ToListAsync(ct);
+foreach (var trip in due)
 {
-    var trip = await trips.GetByIdAsync(tripId)
-        ?? throw new NotFoundException("TRIP_NOT_FOUND", "Khong tim thay chuyen di.");
-    if (trip.RiderId != riderId)
-        throw new ForbiddenException("FORBIDDEN", "Ban khong co quyen huy chuyen di nay.");
-
-    if (trip.Status == TripStatus.Cancelled) // Idempotent: khong nhan ban TripStatusHistory
-        return new CancelTripResponse(trip.Status.ToString());
-    if (trip.Status is not (TripStatus.Requested or TripStatus.Quoted or TripStatus.FindingDriver))
-        throw new InvalidTripStateException(
-            $"INVALID_TRIP_STATE: Khong the huy chuyen di o trang thai '{trip.Status}'.");
-
-    trip.Cancel();                  // Uy quyen qua CurrentState.Cancel(trip)
-    await trips.SaveChangesAsync(); // RowVersion bao ve truoc ket qua matching dong thoi
-    return new CancelTripResponse(trip.Status.ToString());
+    await db.Entry(trip).Reference(t => t.Fare).LoadAsync(ct);
+    trip.Cancel(); // QuotedState.Cancel -> Fare Rejected + Status Cancelled + History
 }
 \end{lstlisting}
 
@@ -1027,6 +1024,7 @@ Payment & \texttt{GET} & \texttt{/payments/\ab by-trip/\{tripId\}} & Owner / Sco
 Payment & \texttt{POST} & \texttt{/payments} \textit{(Internal)} & Scope: \texttt{payments:\ab create} & Tạo/quyết toán giao dịch idempotent (bị chặn \texttt{403} ở Gateway). \\
 Payment & \texttt{POST} & \texttt{/payments/\{id\}/refund} \textit{(Int.)} & Scope: \texttt{payments:\ab refund} & Thực thi đảo bút toán hoàn tiền nội bộ (bị chặn \texttt{403} ở Gateway). \\
 Payment & \texttt{GET} & \texttt{/payments/\ab refunds/\ab by-key/\{k\}} & Scope: \texttt{payments:\ab read} & Đối soát biên lai hoàn tiền theo khóa chống trùng. \\
+Payment & \texttt{GET} & \texttt{/internal/\ab wallets/\ab \{id\}/balance} & Scope: \texttt{payments:\ab read} & Đọc nhanh số dư ví Rider ở bước \texttt{confirm WALLET} (không tải sổ cái). \\
 Payment & \texttt{POST} & \texttt{/internal/\ab accounts/\ab register} & Scope: \texttt{wallets:\ab register} & Mở tài khoản ví nội bộ idempotent. \\
 \end{longtable}
 \renewcommand{\arraystretch}{1.0}
@@ -1048,8 +1046,8 @@ Mọi ngoại lệ phát sinh ở bất kỳ microservice nào đều được l
 \texttt{401} & \texttt{UNAUTHORIZED}, \texttt{INVALID\_CREDENTIALS} & Thiếu/hết hạn JWT, sai chữ ký số hoặc sai số điện thoại/mật khẩu đăng nhập. \\
 \texttt{403} & \texttt{INTERNAL\_ENDPOINT\_ONLY}, \texttt{FORBIDDEN} & Gọi endpoint nội bộ qua Gateway, sai Role/Scope hoặc truy cập chuyến đi/hóa đơn không thuộc quyền sở hữu. \\
 \texttt{404} & \texttt{TRIP\_NOT\_FOUND}, \texttt{NO\_DRIVER\_NEARBY}, \texttt{PAYMENT\_NOT\_FOUND} & Không tồn tại tài nguyên hoặc không có tài xế \texttt{Available} trong bán kính $5\text{ km}$. \\
-\texttt{409} & \texttt{INVALID\_TRIP\_STATE}, \texttt{CONCURRENCY\_\ab CONFLICT}, \texttt{DRIVER\_ALREADY\_ASSIGNED}, \texttt{IDEMPOTENCY\_CONFLICT}, \texttt{REFUND\_NOT\_ALLOWED} & Chuyển sai máy trạng thái \texttt{TripState}, xung đột \texttt{RowVersion}, tài xế đang bận chuyến khác, hoặc gửi lại cùng \texttt{IdempotencyKey} nhưng thay đổi số tiền. \\
-\texttt{503} & \texttt{UPSTREAM\_UNAVAILABLE}, \texttt{UNHEALTHY} & Dịch vụ phụ thuộc quá thời gian chờ hoặc mất kết nối CSDL khi kiểm tra \texttt{/health}. \\
+\texttt{409} & \texttt{INVALID\_TRIP\_STATE}, \texttt{INSUFFICIENT\_\ab FUNDS}, \texttt{QUOTE\_EXPIRED}, \texttt{CONCURRENCY\_\ab CONFLICT}, \texttt{DRIVER\_ALREADY\_\ab ASSIGNED}, \texttt{IDEMPOTENCY\_CONFLICT}, \texttt{REFUND\_NOT\_ALLOWED} & Chuyển sai máy trạng thái \texttt{TripState}, ví thiếu tiền khi xác nhận \texttt{WALLET}, báo giá quá hạn 5 phút, xung đột \texttt{RowVersion}, tài xế đang bận hoặc trùng \texttt{IdempotencyKey} khác số tiền. \\
+\texttt{502/504} & \texttt{UPSTREAM\_UNAVAILABLE}, \texttt{PAYMENT\_\ab TIMEOUT}, \texttt{UNHEALTHY} & Dịch vụ phụ thuộc mất kết nối hoặc quá thời gian chờ 3s khi đọc ví / đối soát (giữ nguyên \texttt{Quoted}, không nhầm là thiếu tiền). \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1090,11 +1088,11 @@ Hình~\ref{fig:rabbitmq-topology} minh họa kiến trúc định tuyến thông
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-    font=\scriptsize,
+    font={\scriptsize\linespread{1.05}\selectfont},
     box/.style={draw=black, thick, rounded corners=3pt, align=center, fill=white},
     ex/.style={draw=black, semithick, rounded corners=3pt, align=center, fill=gray!8},
     dlq/.style={draw=black, thick, dashed, rounded corners=3pt, align=center, fill=gray!12},
-    lbl/.style={fill=white, inner sep=1.2pt, font=\scriptsize},
+    lbl/.style={fill=white, inner sep=1.2pt, font={\scriptsize\linespread{1.05}\selectfont}},
     arr/.style={-{Stealth[length=2.1mm, width=1.6mm]}, semithick},
     darr/.style={-{Stealth[length=2.1mm, width=1.6mm]}, densely dashed, semithick}
 ]
@@ -1317,11 +1315,11 @@ Khác với trạng thái hiển thị của chuyến đi (\texttt{TripStatus}),
 \centering
 \resizebox{0.98\textwidth}{!}{%
 \begin{tikzpicture}[
-    font=\scriptsize,
+    font={\scriptsize\linespread{1.05}\selectfont},
     st/.style={draw=black, thick, rounded corners=3pt, text width=3.4cm, minimum width=3.65cm, minimum height=1.15cm, align=center, fill=white},
     warn/.style={draw=black, thick, dashed, rounded corners=3pt, text width=3.4cm, minimum width=3.65cm, minimum height=1.15cm, align=center, fill=gray!6},
     term/.style={draw=black, very thick, rounded corners=7pt, text width=3.4cm, minimum width=3.65cm, minimum height=1.15cm, align=center, fill=gray!14},
-    lbl/.style={fill=white, inner sep=1.2pt, font=\scriptsize},
+    lbl/.style={fill=white, inner sep=1.2pt, font={\scriptsize\linespread{1.05}\selectfont}},
     arr/.style={-{Stealth[length=2.1mm, width=1.6mm]}, semithick}
 ]
     % Grid 3 columns (x = -5.6, 0.0, +5.6) x 3 rows (y = 0.0, -2.9, -5.8)
@@ -1386,12 +1384,12 @@ Hình~\ref{fig:saga-sequence} mô tả chi tiết trình tự trao đổi thông
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-    font=\scriptsize,
+    font={\scriptsize\linespread{1.05}\selectfont},
     head/.style={draw=black, thick, rounded corners=2pt, minimum width=2.55cm, minimum height=0.82cm, align=center, fill=gray!10},
-    phase/.style={draw=black, fill=gray!6, inner sep=2.5pt, font=\scriptsize\bfseries},
+    phase/.style={draw=black, fill=gray!6, inner sep=2.5pt, font={\scriptsize\bfseries\linespread{1.05}\selectfont}},
     msg/.style={-{Stealth[length=2.0mm, width=1.5mm]}, semithick},
     rmsg/.style={-{Stealth[length=2.0mm, width=1.5mm]}, densely dashed, semithick},
-    lbl/.style={fill=white, inner sep=1pt, font=\scriptsize}
+    lbl/.style={fill=white, inner sep=1pt, font={\scriptsize\linespread{1.05}\selectfont}}
 ]
     % 5 Lifelines at x = -6.4, -3.2, 0.0, +3.2, +6.4 (3.2cm spacing!)
     \node[head] (p1) at (-6.4, 0) {\textbf{Driver / Admin}\\(HTTP Actor)};
@@ -1700,7 +1698,7 @@ Kiến trúc của SwiftRide được thiết kế hướng khả kiểm thử (
 \begin{enumerate}[leftmargin=1.5em]
     \item \textbf{Tầng 1 -- Kiểm thử Đơn vị Miền \& Luật Saga (\textit{Pure Domain \& Saga Unit Tests}):} Do \texttt{TripState}, \texttt{PricingCalculator}, \texttt{MoneyRules}, \texttt{PaymentSettlement} và \texttt{PaymentSagaTransitions} hoàn toàn không phụ thuộc I/O hay CSDL, hàng chục kịch bản biên (làm tròn số lẻ, chuyển sai trạng thái, nhận tín hiệu timeout trễ sau khi đã \texttt{Completed}, đảo dấu bút toán hoàn tiền...) được kiểm chứng với tốc độ vài phần nghìn giây trên \texttt{xUnit}.
     \item \textbf{Tầng 2 -- Kiểm thử Tích hợp Dịch vụ Cô lập (\textit{In-Memory Bus \& Host Integration Tests}):} Trong \texttt{MessagingExtensions.AddSwiftRideMessaging()}, khi phát hiện \texttt{Environment == "Testing"}, hệ thống tự động chuyển cấu hình MassTransit từ RabbitMQ vật lý sang \texttt{x.UsingInMemory((context, cfg) => ...)}, kết hợp \texttt{WebApplicationFactory<Program>} và SQLite/EF Core để kiểm thử trọn vẹn luồng HTTP $\rightarrow$ JWT Role/Scope Policy $\rightarrow$ Application $\rightarrow$ Database ngay trong bộ nhớ CI/CD.
-    \item \textbf{Tầng 3 -- Kiểm thử Hợp đồng Liên dịch vụ End-to-End (\textit{Automated Postman E2E Suites}):} Bộ sưu tập \texttt{SwiftRide-EndToEnd.postman\_collection.json} chạy tự động qua cổng duy nhất \texttt{http://localhost:5000}, kiểm chứng cả luồng \texttt{WALLET}, 3 kịch bản \texttt{CARD} (\texttt{approved}, \texttt{declined}, \texttt{unknown}), chặn \texttt{403} endpoint nội bộ và quy trình Admin duyệt \texttt{Refund Saga}.
+    \item \textbf{Tầng 3 -- Kiểm thử Hợp đồng Liên dịch vụ End-to-End (\textit{Automated Postman E2E Suites}):} Năm bộ sưu tập Postman chạy tự động qua cổng duy nhất \texttt{http://localhost:5000} kiểm chứng trọn vẹn luồng \texttt{WALLET} (\texttt{SwiftRide-EndToEnd}), 3 kịch bản \texttt{CARD} (\texttt{SwiftRide-Card-EndToEnd}), hủy chuyến bất đồng bộ (\texttt{SwiftRide-CancelTrip}), hết hạn báo giá khi ví thiếu tiền với cấu hình rút gọn 30 giây (\texttt{SwiftRide-WalletExpiry30s}) và quy trình Admin duyệt \texttt{Refund Saga} (\texttt{SwiftRide-RefundSaga}).
 \end{enumerate}
 
 % ============================================================================
@@ -1739,7 +1737,7 @@ Mọi quyết định trong Kiến trúc Phần mềm đều là sự đánh đ�
 \end{enumerate}
 
 \subsection{Phân tích Chế độ Lỗi và Tác động Phân tán (FMEA -- Failure Mode \& Effects Analysis)}
-Bảng~\ref{tab:fmea} kiểm chứng sức chống chịu của kiến trúc Backend trước 8 kịch bản lỗi phân tán khắc nghiệt nhất trong thực tế vận hành.
+Bảng~\ref{tab:fmea} kiểm chứng sức chống chịu của kiến trúc Backend trước 9 kịch bản lỗi phân tán khắc nghiệt nhất trong thực tế vận hành.
 
 {\scriptsize
 \renewcommand{\arraystretch}{1.26}
@@ -1780,6 +1778,9 @@ Bảng~\ref{tab:fmea} kiểm chứng sức chống chịu của kiến trúc Bac
 \addlinespace
 
 \textbf{8.} Hai giao dịch cùng khóa chéo tài khoản Ví của Tài xế và Nền tảng & Xảy ra \textbf{Deadlock} vòng tròn ở mức khóa dòng PostgreSQL. & \texttt{AccountRepository.\ab GetForUpdateAsync} luôn sắp xếp danh sách định danh \texttt{ORDER BY id} trước khi \texttt{FOR UPDATE}, phá vỡ điều kiện chờ vòng tròn (Coffman's Circular Wait). \\
+\addlinespace
+
+\textbf{9.} Khách xác nhận \texttt{WALLET} khi ví thiếu tiền hoặc treo chuyến \texttt{Quoted} quá hạn & Gửi yêu cầu tìm tài xế vô ích hoặc giữ báo giá cũ mãi mãi; xung đột với worker tự hủy. & Kiểm tra ví nội bộ trả \texttt{409 INSUFFICIENT\_FUNDS}, giữ \texttt{Quoted} không gia hạn \texttt{QuotedAt}; quá hạn \texttt{QuoteExpiryWorker} (\texttt{UPDLOCK, READPAST} + \texttt{RowVersion}) tự gọi \texttt{trip.Cancel()} mà không hủy nhầm chuyến đã sang \texttt{FindingDriver}. \\
 \end{longtable}
 \renewcommand{\arraystretch}{1.0}
 }
